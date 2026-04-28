@@ -1,0 +1,34 @@
+name: nextcloud
+
+services:
+  nextcloud:
+    image: nextcloud:latest
+    container_name: nextcloud
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - /home/dgx-3/nextcloud/data:/var/www/html/data
+      - /home/dgx-3/nextcloud/config:/var/www/html/config
+      - /home/dgx-3/Media:/media:ro
+    environment:
+      - MYSQL_HOST=nextcloud-db
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=nextcloud_secret_2024
+      - NEXTCLOUD_TRUSTED_DOMAINS=192.168.1.95 100.92.142.31 localhost spark-aaa6
+      - TZ=Europe/Copenhagen
+    depends_on:
+      - nextcloud-db
+
+  nextcloud-db:
+    image: mariadb:11
+    container_name: nextcloud_db
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=nextcloud_root_2024
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=nextcloud_secret_2024
+    volumes:
+      - /home/dgx-3/nextcloud/db:/var/lib/mysql

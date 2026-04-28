@@ -1,0 +1,14 @@
+[Unit]
+Description=Spark Hub IP Notification
+After=network-online.target spark-hub.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=dgx-3
+ExecStart=/home/dgx-3/Documents/spark-hub/show-ip.sh
+Environment=HOME=/home/dgx-3
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=multi-user.target

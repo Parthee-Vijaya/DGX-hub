@@ -1,0 +1,15 @@
+[Unit]
+Description=Tailscale Taildrop File Receiver
+After=tailscaled.service
+Requires=tailscaled.service
+
+[Service]
+Type=simple
+User=dgx-3
+ExecStart=/usr/bin/tailscale file get --loop --verbose /home/dgx-3/Downloads/
+Restart=always
+RestartSec=10
+Environment=HOME=/home/dgx-3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,590 @@
+{% extends "base.html" %}
+{% block title %}{{ config.server_name }}{% endblock %}
+
+{% block head %}
+<style>
+  .sparkline { filter: drop-shadow(0 0 3px rgba(59,130,246,0.4)); }
+  .heatcell { transition: background-color 0.5s ease; }
+  @keyframes border-spin {
+    0% { --angle: 0deg; }
+    100% { --angle: 360deg; }
+  }
+  .glow-border {
+    position: relative;
+  }
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 1rem;
+    padding: 1px;
+    background: conic-gradient(from var(--angle, 0deg), transparent 60%, rgba(59,130,246,0.3), transparent 90%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: border-spin 8s linear infinite;
+    pointer-events: none;
+  }
+  @property --angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+  }
+  .signal-bar { transition: height 0.3s ease, background-color 0.3s ease; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ====== HERO ====== -->
+<div class="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 animate-fade-up">
+  <div>
+    <p class="text-xs text-sky-400 font-semibold uppercase tracking-widest mb-1">NVIDIA DGX Spark</p>
+    <h1 class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight" id="hero-name">Spark Hub</h1>
+    <p class="text-gray-500 mt-2 text-sm flex items-center gap-3">
+      <span id="hero-uptime">---</span>
+      <span class="text-gray-700">&bull;</span>
+      <span id="hero-hostname" class="font-mono">---</span>
+    </p>
+  </div>
+  <div class="text-right">
+    <div class="text-4xl font-light text-white/80 font-mono tabular-nums" id="hero-clock">--:--:--</div>
+    <div class="text-xs text-gray-500 mt-1 flex items-center gap-2 justify-end">
+      <!-- WiFi signal bars -->
+      <div class="flex items-end gap-0.5 h-3.5" id="hero-wifi-bars">
+        <div class="w-1 bg-gray-700 rounded-sm signal-bar" style="height:25%"></div>
+        <div class="w-1 bg-gray-700 rounded-sm signal-bar" style="height:50%"></div>
+        <div class="w-1 bg-gray-700 rounded-sm signal-bar" style="height:75%"></div>
+        <div class="w-1 bg-gray-700 rounded-sm signal-bar" style="height:100%"></div>
+      </div>
+      <span id="hero-wifi">---</span>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SERVICES ====== -->
+<div id="status-bar" class="mb-6 glass rounded-2xl px-5 py-3 text-sm text-gray-400 flex items-center gap-2.5 animate-fade-up delay-1">
+  <div class="w-2.5 h-2.5 rounded-full bg-gray-600 status-pulse"></div>
+  <span>Tjekker tjenester...</span>
+</div>
+
+<section class="mb-6 animate-fade-up delay-1">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+    <!-- AI Chat (hardcoded) -->
+    <div class="glass card-lift glow-hover rounded-2xl cursor-pointer relative overflow-hidden group transition-all"
+         onclick="window.location.href='/chat'">
+      <div class="absolute inset-0 bg-gradient-to-br from-sky-500 to-indigo-600 opacity-5 group-hover:opacity-15 transition-opacity"></div>
+      <div class="relative p-5 flex gap-4">
+        <div class="flex-shrink-0">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+            <svg class="w-7 h-7" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          </div>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <h3 class="text-base font-bold text-white">AI Chat</h3>
+            <div class="w-2 h-2 rounded-full bg-green-400 status-pulse"></div>
+          </div>
+          <p class="text-xs text-gray-400">Lokal AI-assistent</p>
+          <p class="text-[11px] text-gray-500 mt-1">Chat med Gemma4 direkte p&aring; DGX Spark GPU</p>
+        </div>
+      </div>
+      <div class="border-t border-white/5 px-5 py-2.5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-[10px] font-mono text-gray-600">:7863/chat</span>
+          <span class="text-[10px] text-green-400/70 font-medium">Altid online</span>
+        </div>
+        <span class="text-xs text-gray-400 group-hover:text-white transition-colors font-medium">&Aring;bn &rarr;</span>
+      </div>
+    </div>
+
+    {% for s in services %}
+    <div id="card-{{ s.id }}" class="glass card-lift glow-hover rounded-2xl cursor-pointer relative overflow-hidden group transition-all"
+         onclick="openService('{{ s.url }}')">
+      <div class="absolute inset-0 bg-gradient-to-br {{ s.color }} opacity-5 group-hover:opacity-15 transition-opacity"></div>
+      <div class="relative p-5 flex gap-4">
+        <div class="flex-shrink-0">
+          <div class="w-14 h-14 rounded-2xl bg-gradient-to-br {{ s.color }} flex items-center justify-center shadow-lg" style="box-shadow: 0 8px 20px -6px rgba(0,0,0,0.4)">
+            {% if s.icon == 'film' %}
+            <svg class="w-7 h-7" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/></svg>
+            {% elif s.icon == 'tv' %}
+            <svg class="w-7 h-7" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            {% elif s.icon == 'camera' %}
+            <svg class="w-7 h-7" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            {% elif s.icon == 'cpu' %}
+            <svg class="w-7 h-7" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+            {% elif s.icon == 'brain' %}
+            <svg class="w-7 h-7" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+            {% elif s.icon == 'cloud' %}
+            <svg class="w-7 h-7" fill="none" stroke="white" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+            {% endif %}
+          </div>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <h3 class="text-base font-bold text-white">{{ s.name }}</h3>
+            <div class="w-2 h-2 rounded-full bg-gray-600" id="dot-{{ s.id }}"></div>
+          </div>
+          <p class="text-xs text-gray-400">{{ s.description }}</p>
+          <p class="text-[11px] text-gray-500 mt-1">{{ s.subtitle }}</p>
+        </div>
+      </div>
+      <div class="border-t border-white/5 px-5 py-2.5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-[10px] font-mono text-gray-600">:{{ s.port }}</span>
+          <span class="text-[10px] font-medium" id="status-text-{{ s.id }}">---</span>
+        </div>
+        <span class="text-xs text-gray-400 group-hover:text-white transition-colors font-medium">&Aring;bn &rarr;</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- ====== SYSTEM GAUGES (2x2 large cards) ====== -->
+<section class="mb-6 animate-fade-up delay-2">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+    <!-- CPU Card -->
+    <div class="glass glow-border rounded-2xl p-6">
+      <div class="flex items-start gap-5">
+        <div class="flex-shrink-0">
+          <svg class="w-32 h-32" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="8"/>
+            <circle id="ring-cpu" cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="8"
+              stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round"
+              transform="rotate(-90 60 60)" class="transition-all duration-700"/>
+            <text x="60" y="55" text-anchor="middle" class="fill-white text-2xl font-bold" id="ring-cpu-val">--%</text>
+            <text x="60" y="72" text-anchor="middle" class="fill-gray-500 text-[9px] uppercase tracking-widest font-semibold">CPU</text>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0 pt-1">
+          <div class="flex items-center gap-2 mb-2">
+            <h3 class="text-lg font-bold text-white">Processor</h3>
+            <span class="text-xs text-gray-600 ml-auto font-mono" id="sys-cpu-cores">-- cores</span>
+          </div>
+          <div id="sys-cpu-models" class="text-xs text-gray-400 mb-3 leading-relaxed"></div>
+          <!-- Sparkline -->
+          <div class="mb-2">
+            <svg id="sparkline-cpu" class="w-full h-10 sparkline" viewBox="0 0 300 40" preserveAspectRatio="none">
+              <polyline fill="none" stroke="#3b82f6" stroke-width="1.5" points="" class="transition-all"/>
+              <polygon fill="url(#grad-cpu)" points="" opacity="0.15"/>
+              <defs><linearGradient id="grad-cpu" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="transparent"/></linearGradient></defs>
+            </svg>
+          </div>
+          <div class="flex justify-between text-xs text-gray-500">
+            <span>Load: <span class="text-white font-mono" id="sys-load">--</span></span>
+            <span class="text-gray-700">5 min historik</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RAM Card -->
+    <div class="glass glow-border rounded-2xl p-6">
+      <div class="flex items-start gap-5">
+        <div class="flex-shrink-0">
+          <svg class="w-32 h-32" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="8"/>
+            <circle id="ring-mem" cx="60" cy="60" r="50" fill="none" stroke="#22c55e" stroke-width="8"
+              stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round"
+              transform="rotate(-90 60 60)" class="transition-all duration-700"/>
+            <text x="60" y="55" text-anchor="middle" class="fill-white text-2xl font-bold" id="ring-mem-val">--%</text>
+            <text x="60" y="72" text-anchor="middle" class="fill-gray-500 text-[9px] uppercase tracking-widest font-semibold">RAM</text>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0 pt-1">
+          <div class="flex items-center gap-2 mb-2">
+            <h3 class="text-lg font-bold text-white">Hukommelse</h3>
+            <span class="text-xs text-gray-600 ml-auto font-mono" id="sys-mem-label">-- GB</span>
+          </div>
+          <!-- Stacked bar -->
+          <div class="w-full h-5 bg-white/5 rounded-full overflow-hidden mb-3 flex">
+            <div id="mem-bar-used" class="h-full bg-green-500 transition-all duration-700" style="width:0%"></div>
+            <div id="mem-bar-cached" class="h-full bg-green-500/30 transition-all duration-700" style="width:0%"></div>
+          </div>
+          <!-- Sparkline -->
+          <div class="mb-2">
+            <svg id="sparkline-mem" class="w-full h-10 sparkline" viewBox="0 0 300 40" preserveAspectRatio="none">
+              <polyline fill="none" stroke="#22c55e" stroke-width="1.5" points=""/>
+              <polygon fill="url(#grad-mem)" points="" opacity="0.15"/>
+              <defs><linearGradient id="grad-mem" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="transparent"/></linearGradient></defs>
+            </svg>
+          </div>
+          <div class="flex justify-between text-xs text-gray-500">
+            <span>Brugt: <span class="text-white" id="sys-mem-used">--</span> GB</span>
+            <span>Swap: <span class="text-white" id="sys-mem-swap">--</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GPU Card -->
+    <div class="glass glow-border rounded-2xl p-6" style="--angle:120deg">
+      <div class="flex items-start gap-5">
+        <div class="flex-shrink-0">
+          <svg class="w-32 h-32" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="8"/>
+            <circle id="ring-gpu" cx="60" cy="60" r="50" fill="none" stroke="#eab308" stroke-width="8"
+              stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round"
+              transform="rotate(-90 60 60)" class="transition-all duration-700"/>
+            <text x="60" y="55" text-anchor="middle" class="fill-white text-2xl font-bold" id="ring-gpu-val">--</text>
+            <text x="60" y="72" text-anchor="middle" class="fill-gray-500 text-[9px] uppercase tracking-widest font-semibold">GPU</text>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0 pt-1">
+          <div class="flex items-center gap-2 mb-3">
+            <h3 class="text-lg font-bold text-white" id="sys-gpu-name">GPU</h3>
+          </div>
+          <!-- Temperature gradient bar -->
+          <div class="mb-4">
+            <div class="flex justify-between text-[10px] text-gray-500 mb-1">
+              <span>0&deg;C</span>
+              <span class="text-white font-medium" id="sys-gpu-temp-label">--&deg;C</span>
+              <span>100&deg;C</span>
+            </div>
+            <div class="w-full h-3 rounded-full overflow-hidden" style="background: linear-gradient(to right, #22c55e, #eab308, #ef4444)">
+              <div class="relative w-full h-full">
+                <div id="gpu-temp-needle" class="absolute top-0 w-1 h-full bg-white rounded-full shadow-lg transition-all duration-700" style="left:0%"></div>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-3 text-center">
+            <div>
+              <p class="text-[10px] text-gray-500 uppercase tracking-wider">Power</p>
+              <p class="text-sm text-white font-semibold" id="sys-gpu-power">--</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-gray-500 uppercase tracking-wider">VRAM</p>
+              <p class="text-sm text-white font-semibold">128 GB</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-gray-500 uppercase tracking-wider">Driver</p>
+              <p class="text-sm text-white font-mono" id="sys-gpu-driver">--</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Disk Card -->
+    <div class="glass glow-border rounded-2xl p-6" style="--angle:240deg">
+      <div class="flex items-start gap-5">
+        <div class="flex-shrink-0">
+          <svg class="w-32 h-32" viewBox="0 0 120 120">
+            <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="8"/>
+            <circle id="ring-disk" cx="60" cy="60" r="50" fill="none" stroke="#a855f7" stroke-width="8"
+              stroke-dasharray="314.16" stroke-dashoffset="314.16" stroke-linecap="round"
+              transform="rotate(-90 60 60)" class="transition-all duration-700"/>
+            <text x="60" y="55" text-anchor="middle" class="fill-white text-2xl font-bold" id="ring-disk-val">--%</text>
+            <text x="60" y="72" text-anchor="middle" class="fill-gray-500 text-[9px] uppercase tracking-widest font-semibold">DISK</text>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0 pt-1">
+          <div class="flex items-center gap-2 mb-3">
+            <h3 class="text-lg font-bold text-white">Lagerplads</h3>
+            <span class="text-xs text-gray-600 ml-auto font-mono" id="sys-disk-label">--</span>
+          </div>
+          <!-- Disk visual bar -->
+          <div class="w-full h-8 bg-white/5 rounded-xl overflow-hidden mb-4 relative">
+            <div id="disk-bar" class="h-full bg-gradient-to-r from-purple-600 to-purple-400 transition-all duration-700 rounded-xl" style="width:0%"></div>
+            <div class="absolute inset-0 flex items-center justify-center text-xs font-bold text-white" id="disk-bar-text">-- brugt</div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="glass rounded-xl p-3 text-center">
+              <p class="text-[10px] text-gray-500 uppercase tracking-wider">Brugt</p>
+              <p class="text-lg text-white font-bold" id="sys-disk-used">--</p>
+            </div>
+            <div class="glass rounded-xl p-3 text-center">
+              <p class="text-[10px] text-gray-500 uppercase tracking-wider">Ledig</p>
+              <p class="text-lg text-white font-bold" id="sys-disk-avail">--</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ====== BOTTOM ROW: Temps, Network, Docker, System Info ====== -->
+<section class="mb-8 animate-fade-up delay-3">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+
+    <!-- Temperatures heatmap -->
+    <div class="glass rounded-2xl p-6">
+      <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Temperaturer</h3>
+      <div id="sys-temps" class="grid grid-cols-2 gap-2"></div>
+    </div>
+
+    <!-- Network -->
+    <div class="glass rounded-2xl p-6">
+      <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Netv&aelig;rk</h3>
+      <div id="sys-wifi" class="space-y-2.5 mb-4"></div>
+      <div class="border-t border-white/5 pt-3">
+        <p class="text-[10px] text-gray-600 uppercase tracking-wider mb-2 font-medium">Interfaces</p>
+        <div id="sys-interfaces" class="space-y-2"></div>
+      </div>
+    </div>
+
+    <!-- Docker -->
+    <div class="glass rounded-2xl p-6">
+      <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">Docker</h3>
+      <div id="sys-containers" class="space-y-0 divide-y divide-white/5"></div>
+    </div>
+
+    <!-- System info -->
+    <div class="glass rounded-2xl p-6">
+      <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">System</h3>
+      <div class="space-y-3">
+        <div>
+          <p class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Hostname</p>
+          <p class="text-sm text-white font-mono" id="sys-hostname">---</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">OS</p>
+          <p class="text-sm text-white" id="sys-os">---</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Kernel</p>
+          <p class="text-sm text-white font-mono" id="sys-kernel">---</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Sk&aelig;rm</p>
+          <p class="text-xs text-white font-mono leading-relaxed" id="sys-display">---</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<div class="pt-6 border-t border-white/5 text-center text-[10px] text-gray-700 uppercase tracking-widest">
+  NVIDIA DGX Spark &bull; {{ config.tailscale_ip }}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const C = 2 * Math.PI * 50;
+  const cpuHistory = [];
+  const memHistory = [];
+  const MAX_HISTORY = 30;
+
+  function setRing(id, pct) {
+    const el = document.getElementById(id);
+    if (el) el.style.strokeDashoffset = C - (C * Math.min(pct,100) / 100);
+  }
+
+  function updateSparkline(svgId, history, maxVal) {
+    const svg = document.getElementById(svgId);
+    if (!svg || history.length < 2) return;
+    const w = 300, h = 40;
+    const step = w / (MAX_HISTORY - 1);
+    const points = history.map((v, i) => {
+      const x = i * step;
+      const y = h - (v / (maxVal || 100)) * h;
+      return `${x},${y}`;
+    }).join(' ');
+    const polyline = svg.querySelector('polyline');
+    const polygon = svg.querySelector('polygon');
+    if (polyline) polyline.setAttribute('points', points);
+    if (polygon) {
+      const first = history.length > 0 ? `0,${h}` : '';
+      const last = history.length > 0 ? `${(history.length-1)*step},${h}` : '';
+      polygon.setAttribute('points', `${first} ${points} ${last}`);
+    }
+  }
+
+  function tempColor(c) {
+    if (c < 40) return '#22c55e';
+    if (c < 55) return '#eab308';
+    if (c < 70) return '#f97316';
+    return '#ef4444';
+  }
+
+  function openService(url) { window.open(url, '_blank'); }
+
+  // Live clock
+  function updateClock() {
+    document.getElementById('hero-clock').textContent = new Date().toLocaleTimeString('da-DK', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  async function refreshStatus() {
+    try {
+      const data = await (await fetch('/api/status')).json();
+      let online = 0;
+      data.services.forEach(s => {
+        const dot = document.getElementById('dot-' + s.id);
+        const txt = document.getElementById('status-text-' + s.id);
+        const card = document.getElementById('card-' + s.id);
+        if (dot) dot.className = 'w-2 h-2 rounded-full ' + (s.online ? 'bg-green-400 status-pulse' : 'bg-red-400/60');
+        if (txt) {
+          if (s.online && s.response_ms !== null) {
+            txt.textContent = `Online \u00B7 ${s.response_ms}ms`;
+            txt.className = 'text-[11px] text-green-400/70 mt-0.5';
+          } else if (s.online) {
+            txt.textContent = 'Online';
+            txt.className = 'text-[11px] text-green-400/70 mt-0.5';
+          } else {
+            txt.textContent = 'Offline';
+            txt.className = 'text-[11px] text-red-400/70 mt-0.5';
+          }
+        }
+        if (card) card.style.opacity = s.online ? '1' : '0.5';
+        if (s.online) online++;
+      });
+      const bar = document.getElementById('status-bar');
+      if (bar) {
+        const dot = bar.querySelector('div');
+        const total = data.services.length;
+        if (online === total) {
+          dot.className = 'w-2.5 h-2.5 rounded-full bg-green-500 status-pulse';
+          bar.querySelector('span').textContent = `Alle ${total} tjenester online`;
+        } else if (online === 0) {
+          dot.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+          bar.querySelector('span').textContent = 'Ingen tjenester online';
+        } else {
+          dot.className = 'w-2.5 h-2.5 rounded-full bg-yellow-500 status-pulse';
+          bar.querySelector('span').textContent = `${online} af ${total} tjenester online`;
+        }
+      }
+    } catch(e) {}
+  }
+
+  async function refreshSystem() {
+    try {
+      const d = await (await fetch('/api/system')).json();
+
+      // Hero
+      document.getElementById('hero-uptime').textContent = d.uptime;
+      document.getElementById('hero-hostname').textContent = d.hostname;
+      if (d.network.wifi.ssid) {
+        document.getElementById('hero-wifi').textContent = d.network.wifi.ssid;
+        const sig = d.network.wifi.signal_pct || 0;
+        const bars = document.getElementById('hero-wifi-bars').children;
+        for (let i = 0; i < 4; i++) {
+          const threshold = (i + 1) * 25;
+          if (sig >= threshold) {
+            bars[i].style.backgroundColor = '#22c55e';
+          } else {
+            bars[i].style.backgroundColor = 'rgba(255,255,255,0.1)';
+          }
+        }
+      }
+
+      // CPU
+      setRing('ring-cpu', d.cpu.usage_pct);
+      document.getElementById('ring-cpu-val').textContent = d.cpu.usage_pct + '%';
+      document.getElementById('sys-cpu-cores').textContent = d.cpu.cores + ' cores';
+      document.getElementById('sys-cpu-models').innerHTML = d.cpu.models.map(m => `<div>${m}</div>`).join('');
+      document.getElementById('sys-load').textContent = d.cpu.load_avg.join(' / ');
+      cpuHistory.push(d.cpu.usage_pct);
+      if (cpuHistory.length > MAX_HISTORY) cpuHistory.shift();
+      updateSparkline('sparkline-cpu', cpuHistory, 100);
+
+      // Memory
+      setRing('ring-mem', d.memory.usage_pct);
+      document.getElementById('ring-mem-val').textContent = d.memory.usage_pct + '%';
+      document.getElementById('sys-mem-label').textContent = d.memory.total_gb + ' GB';
+      document.getElementById('sys-mem-used').textContent = d.memory.used_gb;
+      document.getElementById('sys-mem-swap').textContent = d.memory.swap_used_gb + ' / ' + d.memory.swap_total_gb + ' GB';
+      const memUsedPct = d.memory.usage_pct;
+      document.getElementById('mem-bar-used').style.width = memUsedPct + '%';
+      const cachedPct = Math.max(0, ((d.memory.total_gb - d.memory.available_gb - d.memory.used_gb) / d.memory.total_gb * 100));
+      document.getElementById('mem-bar-cached').style.width = Math.max(0, cachedPct) + '%';
+      memHistory.push(d.memory.usage_pct);
+      if (memHistory.length > MAX_HISTORY) memHistory.shift();
+      updateSparkline('sparkline-mem', memHistory, 100);
+
+      // GPU
+      const gpuPct = d.gpu.temp_c ? Math.min(d.gpu.temp_c, 100) : 0;
+      setRing('ring-gpu', gpuPct);
+      document.getElementById('ring-gpu-val').textContent = d.gpu.temp_c ? d.gpu.temp_c + '\u00B0C' : '--';
+      document.getElementById('sys-gpu-name').textContent = d.gpu.name || 'GPU';
+      document.getElementById('sys-gpu-temp-label').innerHTML = (d.gpu.temp_c || '--') + '&deg;C';
+      document.getElementById('gpu-temp-needle').style.left = (d.gpu.temp_c || 0) + '%';
+      document.getElementById('sys-gpu-power').textContent = d.gpu.power_w;
+      document.getElementById('sys-gpu-driver').textContent = d.gpu.driver;
+
+      // Disk
+      const diskPct = parseInt(d.disk.usage_pct) || 0;
+      setRing('ring-disk', diskPct);
+      document.getElementById('ring-disk-val').textContent = d.disk.usage_pct;
+      document.getElementById('sys-disk-label').textContent = d.disk.total + ' total';
+      document.getElementById('sys-disk-used').textContent = d.disk.used;
+      document.getElementById('sys-disk-avail').textContent = d.disk.available;
+      document.getElementById('disk-bar').style.width = diskPct + '%';
+      document.getElementById('disk-bar-text').textContent = d.disk.used + ' brugt';
+
+      // Temps as heatmap cells
+      document.getElementById('sys-temps').innerHTML = d.temperatures.slice(0, 8).map(t => `
+        <div class="heatcell rounded-xl p-3 text-center" style="background:${tempColor(t.temp_c)}15; border: 1px solid ${tempColor(t.temp_c)}30">
+          <p class="text-lg font-bold" style="color:${tempColor(t.temp_c)}">${t.temp_c}&deg;</p>
+          <p class="text-[9px] text-gray-500 uppercase tracking-wider truncate mt-0.5" title="${t.zone}">${t.zone}</p>
+        </div>
+      `).join('');
+
+      // Network
+      const wifiEl = document.getElementById('sys-wifi');
+      if (d.network.wifi.ssid) {
+        wifiEl.innerHTML = `
+          <div class="flex justify-between text-sm"><span class="text-gray-400">SSID</span><span class="text-white font-medium">${d.network.wifi.ssid}</span></div>
+          <div class="flex justify-between text-sm"><span class="text-gray-400">Signal</span>
+            <div class="flex items-center gap-2"><span class="text-white">${d.network.wifi.signal_pct}%</span>
+              <div class="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden"><div class="h-full bg-green-500 rounded-full transition-all" style="width:${d.network.wifi.signal_pct}%"></div></div>
+            </div>
+          </div>
+          <div class="flex justify-between text-sm"><span class="text-gray-400">Hastighed</span><span class="text-white">${d.network.wifi.rate}</span></div>
+        `;
+      }
+      document.getElementById('sys-interfaces').innerHTML = d.network.interfaces.map(i => `
+        <div class="flex justify-between text-sm text-gray-400 cursor-pointer hover:text-white transition-colors" onclick="navigator.clipboard.writeText('${i.ip}');" title="Klik for at kopiere">
+          <span class="font-mono text-xs">${i.name}</span>
+          <span class="text-white font-mono text-xs">${i.ip}</span>
+        </div>
+      `).join('');
+
+      // Display
+      if (d.display) document.getElementById('sys-display').textContent = d.display;
+
+      // System
+      document.getElementById('sys-hostname').textContent = d.hostname;
+      document.getElementById('sys-os').textContent = d.os;
+      document.getElementById('sys-kernel').textContent = d.kernel;
+
+      // Docker
+      const cEl = document.getElementById('sys-containers');
+      if (d.containers.length === 0) {
+        cEl.innerHTML = '<span class="text-gray-600 text-sm">Ingen aktive</span>';
+      } else {
+        cEl.innerHTML = d.containers.map(c => {
+          const ok = c.status.toLowerCase().includes('up');
+          const healthy = c.status.toLowerCase().includes('healthy');
+          const color = healthy ? 'bg-green-400' : (ok ? 'bg-yellow-400' : 'bg-red-400');
+          const ports = c.ports ? c.ports.replace(/0\.0\.0\.0:/g,'').replace(/:::?/g,'').split(',')[0] : '';
+          return `<div class="flex items-center gap-3 py-2.5">
+            <div class="w-2 h-2 rounded-full ${color}"></div>
+            <span class="font-mono text-xs text-white truncate">${c.name}</span>
+            ${ports ? `<span class="text-[10px] text-gray-600 font-mono">${ports}</span>` : ''}
+            <span class="ml-auto text-[10px] text-gray-500">${c.status.split('(')[0].trim()}</span>
+          </div>`;
+        }).join('');
+      }
+    } catch(e) { console.error(e); }
+  }
+
+  // Config
+  fetch('/api/config').then(r=>r.json()).then(cfg=>{
+    if(cfg.server_name) document.getElementById('hero-name').textContent = cfg.server_name;
+  }).catch(()=>{});
+
+  refreshStatus();
+  refreshSystem();
+  setInterval(refreshStatus, 30000);
+  setInterval(refreshSystem, 10000);
+</script>
+{% endblock %}

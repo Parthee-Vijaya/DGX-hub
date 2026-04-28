@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}System — Spark Hub{% endblock %}
+
+{% block head %}
+<style>
+  .gauge-ring { transition: stroke-dashoffset 1s ease; }
+  .stat-row:nth-child(even) { background: rgba(255,255,255,0.02); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="mb-6 flex items-center gap-3 animate-fade-up">
+  <a href="/dashboard" class="text-gray-500 hover:text-white transition-colors text-xs font-medium">&larr; Dashboard</a>
+  <span class="text-gray-800">/</span>
+  <h1 class="text-lg font-semibold">System Status</h1>
+  <div class="ml-auto flex items-center gap-2">
+    <span id="last-updated" class="text-[10px] text-gray-600"></span>
+    <button onclick="refresh()" class="text-xs glass glass-hover px-3 py-1.5 rounded-lg transition-all font-medium text-gray-400 hover:text-white">
+      Opdater
+    </button>
+  </div>
+</div>
+
+<!-- System header -->
+<div class="glass rounded-2xl p-5 mb-6 animate-fade-up delay-1">
+  <div class="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
+    <div>
+      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Hostname</span>
+      <p class="text-white font-mono text-sm" id="s-hostname">---</p>
+    </div>
+    <div>
+      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">OS</span>
+      <p class="text-white text-sm" id="s-os">---</p>
+    </div>
+    <div>
+      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Kernel</span>
+      <p class="text-white font-mono text-sm" id="s-kernel">---</p>
+    </div>
+    <div>
+      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Arch</span>
+      <p class="text-white font-mono text-sm" id="s-arch">---</p>
+    </div>
+    <div>
+      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Uptime</span>
+      <p class="text-white text-sm" id="s-uptime">---</p>
+    </div>
+  </div>
+</div>
+
+<!-- Gauges row: CPU, RAM, GPU, Disk -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 animate-fade-up delay-2">
+
+  <!-- CPU -->
+  <div class="glass rounded-2xl p-5 text-center">
+    <svg class="w-24 h-24 mx-auto mb-3" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="6"/>
+      <circle id="ring-cpu" cx="50" cy="50" r="42" fill="none" stroke="#3b82f6" stroke-width="6"
+        stroke-dasharray="263.89" stroke-dashoffset="263.89" stroke-linecap="round"
+        transform="rotate(-90 50 50)" class="gauge-ring"/>
+      <text x="50" y="48" text-anchor="middle" class="fill-white text-xl font-bold" id="ring-cpu-val">--%</text>
+      <text x="50" y="62" text-anchor="middle" class="fill-gray-500 text-[8px] uppercase tracking-widest font-semibold">CPU</text>
+    </svg>
+    <div id="s-cpu-models" class="text-[10px] text-gray-600 mb-1"></div>
+    <div class="text-xs text-gray-500"><span id="s-cpu-cores">--</span> cores</div>
+    <div class="text-xs text-gray-500">Load: <span class="text-white font-mono" id="s-cpu-load">--</span></div>
+  </div>
+
+  <!-- Memory -->
+  <div class="glass rounded-2xl p-5 text-center">
+    <svg class="w-24 h-24 mx-auto mb-3" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="6"/>
+      <circle id="ring-mem" cx="50" cy="50" r="42" fill="none" stroke="#22c55e" stroke-width="6"
+        stroke-dasharray="263.89" stroke-dashoffset="263.89" stroke-linecap="round"
+        transform="rotate(-90 50 50)" class="gauge-ring"/>
+      <text x="50" y="48" text-anchor="middle" class="fill-white text-xl font-bold" id="ring-mem-val">--%</text>
+      <text x="50" y="62" text-anchor="middle" class="fill-gray-500 text-[8px] uppercase tracking-widest font-semibold">RAM</text>
+    </svg>
+    <div class="text-xs text-gray-500"><span class="text-white" id="s-mem-used">--</span> / <span id="s-mem-total">--</span> GB</div>
+    <div class="text-xs text-gray-500">Swap: <span class="text-white" id="s-mem-swap">--</span></div>
+  </div>
+
+  <!-- GPU -->
+  <div class="glass rounded-2xl p-5 text-center">
+    <svg class="w-24 h-24 mx-auto mb-3" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="6"/>
+      <circle id="ring-gpu" cx="50" cy="50" r="42" fill="none" stroke="#eab308" stroke-width="6"
+        stroke-dasharray="263.89" stroke-dashoffset="263.89" stroke-linecap="round"
+        transform="rotate(-90 50 50)" class="gauge-ring"/>
+      <text x="50" y="48" text-anchor="middle" class="fill-white text-xl font-bold" id="ring-gpu-val">--</text>
+      <text x="50" y="62" text-anchor="middle" class="fill-gray-500 text-[8px] uppercase tracking-widest font-semibold">GPU</text>
+    </svg>
+    <div class="text-xs text-white font-medium" id="s-gpu-name">---</div>
+    <div class="text-xs text-gray-500">Power: <span class="text-white" id="s-gpu-power">--</span></div>
+    <div class="text-xs text-gray-500">Driver: <span class="text-white font-mono" id="s-gpu-driver">--</span></div>
+  </div>
+
+  <!-- Disk -->
+  <div class="glass rounded-2xl p-5 text-center">
+    <svg class="w-24 h-24 mx-auto mb-3" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="6"/>
+      <circle id="ring-disk" cx="50" cy="50" r="42" fill="none" stroke="#a855f7" stroke-width="6"
+        stroke-dasharray="263.89" stroke-dashoffset="263.89" stroke-linecap="round"
+        transform="rotate(-90 50 50)" class="gauge-ring"/>
+      <text x="50" y="48" text-anchor="middle" class="fill-white text-xl font-bold" id="ring-disk-val">--%</text>
+      <text x="50" y="62" text-anchor="middle" class="fill-gray-500 text-[8px] uppercase tracking-widest font-semibold">DISK</text>
+    </svg>
+    <div class="text-xs text-gray-500"><span class="text-white" id="s-disk-used">--</span> / <span id="s-disk-total">--</span></div>
+    <div class="text-xs text-gray-500">Ledig: <span class="text-white" id="s-disk-avail">--</span></div>
+  </div>
+</div>
+
+<!-- Temps, Network, Display -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 animate-fade-up delay-3">
+
+  <!-- Temperatures -->
+  <div class="glass rounded-2xl p-5">
+    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Temperaturer</h2>
+    <div id="s-temps" class="space-y-1.5 text-sm"></div>
+  </div>
+
+  <!-- Network -->
+  <div class="glass rounded-2xl p-5">
+    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Netv&aelig;rk</h2>
+    <div id="s-wifi" class="space-y-1 text-sm mb-3"></div>
+    <div id="s-interfaces" class="space-y-1 text-sm"></div>
+  </div>
+
+  <!-- Display -->
+  <div class="glass rounded-2xl p-5">
+    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Sk&aelig;rm</h2>
+    <p class="text-sm text-gray-300 font-mono text-xs leading-relaxed" id="s-display">---</p>
+  </div>
+</div>
+
+<!-- Docker -->
+<div class="glass rounded-2xl p-5 animate-fade-up delay-4">
+  <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Docker Containers</h2>
+  <div id="s-containers" class="space-y-0 text-sm divide-y divide-white/5"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const C = 2 * Math.PI * 42; // 263.89
+
+  function setRing(id, pct, label) {
+    const el = document.getElementById(id);
+    const txt = document.getElementById(id.replace('ring-','ring-') + '-val');
+    if (el) el.style.strokeDashoffset = C - (C * Math.min(pct,100) / 100);
+    if (txt) txt.textContent = label;
+  }
+
+  function tempColor(c) {
+    if (c < 40) return 'text-green-400';
+    if (c < 55) return 'text-yellow-400';
+    if (c < 70) return 'text-orange-400';
+    return 'text-red-400';
+  }
+
+  async function refresh() {
+    try {
+      const d = await (await fetch('/api/system')).json();
+
+      // Header
+      document.getElementById('s-hostname').textContent = d.hostname;
+      document.getElementById('s-os').textContent = d.os;
+      document.getElementById('s-kernel').textContent = d.kernel;
+      document.getElementById('s-arch').textContent = d.arch;
+      document.getElementById('s-uptime').textContent = d.uptime;
+
+      // Rings
+      setRing('ring-cpu', d.cpu.usage_pct, d.cpu.usage_pct + '%');
+      setRing('ring-mem', d.memory.usage_pct, d.memory.usage_pct + '%');
+      const gpuPct = d.gpu.temp_c ? Math.min(d.gpu.temp_c, 100) : 0;
+      setRing('ring-gpu', gpuPct, d.gpu.temp_c ? d.gpu.temp_c + '\u00B0C' : '--');
+      const diskPct = parseInt(d.disk.usage_pct) || 0;
+      setRing('ring-disk', diskPct, d.disk.usage_pct);
+
+      // CPU details
+      document.getElementById('s-cpu-models').innerHTML = d.cpu.models.map(m => `<div>${m}</div>`).join('');
+      document.getElementById('s-cpu-cores').textContent = d.cpu.cores;
+      document.getElementById('s-cpu-load').textContent = d.cpu.load_avg.join(' / ');
+
+      // Memory details
+      document.getElementById('s-mem-used').textContent = d.memory.used_gb;
+      document.getElementById('s-mem-total').textContent = d.memory.total_gb;
+      document.getElementById('s-mem-swap').textContent = `${d.memory.swap_used_gb} / ${d.memory.swap_total_gb} GB`;
+
+      // GPU details
+      document.getElementById('s-gpu-name').textContent = d.gpu.name;
+      document.getElementById('s-gpu-power').textContent = d.gpu.power_w;
+      document.getElementById('s-gpu-driver').textContent = d.gpu.driver;
+
+      // Disk
+      document.getElementById('s-disk-used').textContent = d.disk.used;
+      document.getElementById('s-disk-total').textContent = d.disk.total;
+      document.getElementById('s-disk-avail').textContent = d.disk.available;
+
+      // Temps
+      document.getElementById('s-temps').innerHTML = d.temperatures.map(t => `
+        <div class="flex justify-between text-gray-400 stat-row px-2 py-1 rounded">
+          <span class="truncate max-w-[140px] text-xs" title="${t.zone}">${t.zone}</span>
+          <span class="${tempColor(t.temp_c)} font-mono text-xs">${t.temp_c}\u00B0C</span>
+        </div>
+      `).join('');
+
+      // Network
+      const wifiEl = document.getElementById('s-wifi');
+      if (d.network.wifi.ssid) {
+        wifiEl.innerHTML = `
+          <div class="flex justify-between text-gray-400"><span class="text-xs">WiFi</span><span class="text-white text-xs font-medium">${d.network.wifi.ssid}</span></div>
+          <div class="flex justify-between text-gray-400"><span class="text-xs">Signal</span><span class="text-white text-xs">${d.network.wifi.signal_pct}%</span></div>
+          <div class="flex justify-between text-gray-400"><span class="text-xs">Hastighed</span><span class="text-white text-xs">${d.network.wifi.rate}</span></div>
+        `;
+      }
+      document.getElementById('s-interfaces').innerHTML = d.network.interfaces.map(i => `
+        <div class="flex justify-between text-gray-400 stat-row px-2 py-1 rounded">
+          <span class="font-mono text-[10px]">${i.name}</span>
+          <span class="text-white font-mono text-[10px]">${i.ip}</span>
+        </div>
+      `).join('');
+
+      document.getElementById('s-display').textContent = d.display;
+
+      // Docker
+      const cEl = document.getElementById('s-containers');
+      if (d.containers.length === 0) {
+        cEl.innerHTML = '<span class="text-gray-600 text-xs">Ingen aktive containers</span>';
+      } else {
+        cEl.innerHTML = d.containers.map(c => {
+          const ok = c.status.toLowerCase().includes('up');
+          return `
+            <div class="flex items-center gap-3 py-2.5 px-1">
+              <div class="w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-400' : 'bg-yellow-400'}"></div>
+              <span class="font-mono text-xs text-white">${c.name}</span>
+              <span class="ml-auto text-[10px] text-gray-500">${c.status}</span>
+            </div>`;
+        }).join('');
+      }
+
+      document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('da-DK');
+    } catch(e) { console.error(e); }
+  }
+
+  refresh();
+  setInterval(refresh, 10000);
+</script>
+{% endblock %}

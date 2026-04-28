@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="da" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Spark Hub{% endblock %}</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#0ea5e9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Spark Hub">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #09090b;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(14,165,233,0.08), transparent),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(99,102,241,0.05), transparent);
+    }
+    .glass {
+      background: rgba(255,255,255,0.03);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .glass-hover:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.1);
+    }
+    .glow-sm { box-shadow: 0 0 20px -5px rgba(14,165,233,0.15); }
+    .glow-hover:hover { box-shadow: 0 0 30px -5px rgba(14,165,233,0.25); }
+    .card-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .card-lift:hover { transform: translateY(-2px); }
+    .status-pulse { animation: pulse-glow 2s ease-in-out infinite; }
+    @keyframes pulse-glow { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    @keyframes fade-up {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-up {
+      animation: fade-up 0.4s ease-out both;
+    }
+    .delay-1 { animation-delay: 0.05s; }
+    .delay-2 { animation-delay: 0.1s; }
+    .delay-3 { animation-delay: 0.15s; }
+    .delay-4 { animation-delay: 0.2s; }
+    .nav-blur {
+      background: rgba(9,9,11,0.7);
+      backdrop-filter: saturate(180%) blur(16px);
+      -webkit-backdrop-filter: saturate(180%) blur(16px);
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body class="h-full text-white antialiased">
+
+{% block nav %}
+<nav class="nav-blur border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+  <a href="/dashboard" class="flex items-center gap-2.5 font-semibold text-base hover:text-sky-400 transition-colors group">
+    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-sky-500/20 transition-shadow">
+      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+    </div>
+    <span id="nav-server-name">Spark Hub</span>
+  </a>
+  <div class="flex items-center gap-2">
+    <a href="/system" class="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all hidden sm:block">
+      System
+    </a>
+    <a href="/chat" class="px-3 py-1.5 text-xs font-medium text-sky-400 hover:text-sky-300 hover:bg-sky-400/10 rounded-lg transition-all hidden sm:block">
+      Chat
+    </a>
+    <a href="/settings" class="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-400 hover:text-white" title="Indstillinger">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+    </a>
+    <!-- Mobile menu -->
+    <button onclick="document.getElementById('mobile-menu').classList.toggle('hidden')" class="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-400 sm:hidden">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+      </svg>
+    </button>
+  </div>
+</nav>
+<!-- Mobile dropdown -->
+<div id="mobile-menu" class="hidden sm:hidden nav-blur border-b border-white/5 px-4 py-2 flex flex-col gap-1">
+  <a href="/dashboard" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">Dashboard</a>
+  <a href="/chat" class="px-3 py-2 text-sm text-sky-400 hover:bg-sky-400/10 rounded-lg transition-all">Chat</a>
+  <a href="/system" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">System</a>
+  <a href="/settings" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">Indstillinger</a>
+</div>
+{% endblock %}
+
+<main class="{% block main_class %}max-w-7xl mx-auto px-4 sm:px-6 py-8{% endblock %}">
+  {% block content %}{% endblock %}
+</main>
+
+<script>
+  fetch('/api/config').then(r=>r.json()).then(cfg=>{
+    const el = document.getElementById('nav-server-name');
+    if(el && cfg.server_name) el.textContent = cfg.server_name;
+  }).catch(()=>{});
+</script>
+{% block scripts %}{% endblock %}
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
+  }
+</script>
+</body>
+</html>
