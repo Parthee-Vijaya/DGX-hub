@@ -7,19 +7,23 @@ Port 7863
 import json
 import asyncio
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import segno
+
 from installers import REGISTRY as INSTALLER_REGISTRY
 from installers.base import InstallContext
+from chat_tools import TOOL_DEFINITIONS, execute_tool
 
 # ---------------------------------------------------------------------------
 # Config
@@ -486,9 +490,13 @@ OLLAMA_URL = "http://localhost:11434"
 DEFAULT_CHAT_MODEL = "mistral-small3.2:latest"
 CHAT_SYSTEM_PROMPT = (
     "Du er en hjælpsom assistent på en DGX Spark hjemmeserver. "
-    "Svar på det sprog brugeren skriver på. "
-    "Vær kort og præcis."
+    "Svar på det sprog brugeren skriver på (typisk dansk eller engelsk). "
+    "Vær kort og præcis. "
+    "Du har værktøjer til at tjekke serverens status, liste services, "
+    "genstarte services, og søge i brugerens Media-mappe — brug dem når "
+    "spørgsmålet kræver konkret data fra serveren i stedet for at gætte."
 )
+MAX_TOOL_HOPS = 4  # safety net so the model can't loop forever
 
 
 @app.get("/chat", response_class=HTMLResponse)
@@ -510,73 +518,110 @@ async def chat_page(request: Request):
 
 @app.post("/api/chat/stream")
 async def chat_stream(request: Request):
-    """Stream svar fra Ollama som SSE, inklusive metrics i sidste event."""
+    """Stream svar fra Ollama som SSE, med support for tool-calling.
+
+    Loops up to MAX_TOOL_HOPS times: each iteration sends the conversation
+    to Ollama (non-streaming), executes any tool_calls in the response,
+    appends them to the history, and continues. The final non-tool response
+    is sent back as content.
+    """
     body = await request.json()
     messages = body.get("messages", [])
     model = body.get("model", DEFAULT_CHAT_MODEL)
+    tools_enabled = body.get("tools", True)
 
     if not messages or messages[0].get("role") != "system":
         messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}] + messages
 
     async def event_generator():
-        first_token_time = None
         start_time = time.monotonic()
+        first_token_time = None
+        total_eval_count = 0
+        total_eval_duration = 0
+        total_prompt_count = 0
+        total_prompt_duration = 0
+
         try:
-            async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream(
-                    "POST",
-                    f"{OLLAMA_URL}/api/chat",
-                    json={"model": model, "messages": messages, "stream": True},
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
-                            content = data.get("message", {}).get("content", "")
-                            done = data.get("done", False)
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                for hop in range(MAX_TOOL_HOPS + 1):
+                    payload = {
+                        "model": model,
+                        "messages": messages,
+                        "stream": False,
+                    }
+                    if tools_enabled:
+                        payload["tools"] = TOOL_DEFINITIONS
 
-                            if content and first_token_time is None:
-                                first_token_time = time.monotonic()
+                    resp = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
 
-                            payload = {"content": content, "done": done}
+                    msg = data.get("message", {}) or {}
+                    content = msg.get("content", "") or ""
+                    tool_calls = msg.get("tool_calls", []) or []
 
-                            if done:
-                                # Ollama sender metrics i det sidste svar
-                                elapsed = time.monotonic() - start_time
-                                ttft = (first_token_time - start_time) if first_token_time else 0
-                                eval_count = data.get("eval_count", 0)
-                                eval_duration = data.get("eval_duration", 0)  # nanoseconds
-                                prompt_eval_count = data.get("prompt_eval_count", 0)
-                                prompt_eval_duration = data.get("prompt_eval_duration", 0)
+                    total_eval_count += data.get("eval_count", 0)
+                    total_eval_duration += data.get("eval_duration", 0)
+                    total_prompt_count += data.get("prompt_eval_count", 0)
+                    total_prompt_duration += data.get("prompt_eval_duration", 0)
 
-                                tokens_per_sec = (
-                                    eval_count / (eval_duration / 1e9)
-                                    if eval_duration > 0 else 0
+                    # Always append the assistant turn to history (with tool_calls)
+                    messages.append({
+                        "role": "assistant",
+                        "content": content,
+                        **({"tool_calls": tool_calls} if tool_calls else {}),
+                    })
+
+                    if tool_calls and hop < MAX_TOOL_HOPS:
+                        # Run each tool, emit progress, append results
+                        for tc in tool_calls:
+                            fn = tc.get("function", {}) or {}
+                            tool_name = fn.get("name", "")
+                            tool_args = fn.get("arguments", {}) or {}
+                            if isinstance(tool_args, str):
+                                try:
+                                    tool_args = json.loads(tool_args)
+                                except json.JSONDecodeError:
+                                    tool_args = {}
+
+                            yield f"data: {json.dumps({'tool_call': {'name': tool_name, 'args': tool_args, 'status': 'running'}})}\n\n"
+
+                            try:
+                                result = await execute_tool(
+                                    tool_name, tool_args,
+                                    collect_system_info=_collect_system_info,
+                                    installer_registry=INSTALLER_REGISTRY,
+                                    load_config=load_config,
                                 )
-                                prompt_tps = (
-                                    prompt_eval_count / (prompt_eval_duration / 1e9)
-                                    if prompt_eval_duration > 0 else 0
-                                )
+                            except Exception as e:
+                                result = {"error": str(e)}
 
-                                payload["metrics"] = {
-                                    "model": model,
-                                    "total_tokens": eval_count + prompt_eval_count,
-                                    "generated_tokens": eval_count,
-                                    "prompt_tokens": prompt_eval_count,
-                                    "tokens_per_sec": round(tokens_per_sec, 1),
-                                    "prompt_tps": round(prompt_tps, 1),
-                                    "time_to_first_token_ms": round(ttft * 1000),
-                                    "total_time_sec": round(elapsed, 2),
-                                }
+                            yield f"data: {json.dumps({'tool_result': {'name': tool_name, 'result': result}})}\n\n"
 
-                            yield f"data: {json.dumps(payload)}\n\n"
-                            if done:
-                                break
-                        except json.JSONDecodeError:
-                            continue
+                            messages.append({
+                                "role": "tool",
+                                "name": tool_name,
+                                "content": json.dumps(result, ensure_ascii=False),
+                            })
+                        continue  # next hop
+
+                    # No tool calls — this is the final answer
+                    if content and first_token_time is None:
+                        first_token_time = time.monotonic()
+
+                    elapsed = time.monotonic() - start_time
+                    ttft = (first_token_time - start_time) if first_token_time else 0
+                    tps = (total_eval_count / (total_eval_duration / 1e9)) if total_eval_duration else 0
+                    prompt_tps = (total_prompt_count / (total_prompt_duration / 1e9)) if total_prompt_duration else 0
+
+                    yield f"data: {json.dumps({'content': content, 'done': True, 'metrics': {'model': model, 'total_tokens': total_eval_count + total_prompt_count, 'generated_tokens': total_eval_count, 'prompt_tokens': total_prompt_count, 'tokens_per_sec': round(tps, 1), 'prompt_tps': round(prompt_tps, 1), 'time_to_first_token_ms': round(ttft * 1000), 'total_time_sec': round(elapsed, 2), 'tool_hops': hop}}, ensure_ascii=False)}\n\n"
+                    return
+
+                # Exhausted hops — emit whatever the last content was
+                yield f"data: {json.dumps({'content': '(stoppede efter for mange tool-kald)', 'done': True, 'error': 'tool-loop exceeded'})}\n\n"
+
         except Exception as e:
-            yield f"data: {json.dumps({'content': '', 'done': True, 'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'content': '', 'done': True, 'error': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -604,6 +649,181 @@ async def chat_models():
         return JSONResponse({"models": models})
     except Exception:
         return JSONResponse({"models": []})
+
+
+# ---------------------------------------------------------------------------
+# /api/upload — smart drop-upload with auto-routing by file type
+# ---------------------------------------------------------------------------
+
+UPLOAD_CATEGORIES = {
+    "film":        {".mkv", ".mp4", ".avi", ".m4v", ".webm", ".mov", ".mpg", ".mpeg", ".wmv"},
+    "fotos":       {".jpg", ".jpeg", ".heic", ".heif", ".png", ".webp", ".gif", ".bmp", ".tiff", ".raw", ".dng"},
+    "musik":       {".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".wma"},
+    "dokumenter":  {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".odt", ".ods", ".odp",
+                    ".txt", ".md", ".rtf", ".csv"},
+    "boger":       {".epub", ".mobi", ".azw3", ".azw", ".fb2"},
+}
+
+# Episode pattern: S01E01, s1e1, 1x01 — case insensitive
+_EPISODE_RE = re.compile(r"(s\d{1,2}e\d{1,2}|\b\d{1,2}x\d{2}\b)", re.IGNORECASE)
+
+
+def _route_file(filename: str, media_root: Path) -> tuple[str, Path]:
+    """Pick a category folder for the file based on its extension and name.
+
+    Returns (category, destination_dir).
+    """
+    ext = Path(filename).suffix.lower()
+    for category, exts in UPLOAD_CATEGORIES.items():
+        if ext in exts:
+            # Special-case: video files matching SxxExx go to serier, else film
+            if category == "film" and _EPISODE_RE.search(filename):
+                return "serier", media_root / "serier"
+            return category, media_root / category
+    return "andet", media_root / "andet"
+
+
+def _safe_filename(name: str) -> str:
+    """Strip path traversal and reduce to a safe basename."""
+    name = os.path.basename(name)
+    name = name.replace("\x00", "").strip()
+    return name or "fil"
+
+
+def _unique_path(dest_dir: Path, filename: str) -> Path:
+    """Return an unused path under dest_dir, appending -1, -2, ... if needed."""
+    p = dest_dir / filename
+    if not p.exists():
+        return p
+    stem = p.stem
+    suffix = p.suffix
+    i = 1
+    while True:
+        candidate = dest_dir / f"{stem}-{i}{suffix}"
+        if not candidate.exists():
+            return candidate
+        i += 1
+
+
+@app.post("/api/upload")
+async def api_upload(file: UploadFile = File(...)):
+    """Stream an uploaded file to disk under the right Media/<category>/ folder."""
+    config = load_config()
+    media_root = Path(config.get("media_root", str(Path.home() / "Media")))
+    media_root.mkdir(parents=True, exist_ok=True)
+
+    safe_name = _safe_filename(file.filename or "fil")
+    category, dest_dir = _route_file(safe_name, media_root)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = _unique_path(dest_dir, safe_name)
+
+    bytes_written = 0
+    chunk_size = 1024 * 1024  # 1 MiB
+    try:
+        with open(dest_path, "wb") as out:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                out.write(chunk)
+                bytes_written += len(chunk)
+    except Exception as e:
+        try:
+            dest_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+    return JSONResponse({
+        "ok": True,
+        "filename": dest_path.name,
+        "category": category,
+        "path": str(dest_path),
+        "relative_path": str(dest_path.relative_to(media_root)),
+        "bytes": bytes_written,
+    })
+
+
+# ---------------------------------------------------------------------------
+# /connect — QR code mobile onboarding
+# ---------------------------------------------------------------------------
+
+CONNECT_SERVICES = [
+    {
+        "id": "jellyfin",
+        "name": "Jellyfin",
+        "tagline": "Film, serier og musik",
+        "color": "from-purple-500 to-purple-700",
+        "port": 8096,
+        "url_template": "http://{ip}:8096",
+        "instructions": (
+            "Hent <b>Jellyfin Mobile</b> fra App Store / Play Store. "
+            "Tryk <i>Add server</i> og scan QR-koden — eller kopier URL'en og indsæt manuelt."
+        ),
+        "app_store": "https://apps.apple.com/app/jellyfin-mobile/id1480192618",
+        "play_store": "https://play.google.com/store/apps/details?id=org.jellyfin.mobile",
+    },
+    {
+        "id": "plex",
+        "name": "Plex",
+        "tagline": "Premium medie-streaming",
+        "color": "from-yellow-500 to-orange-600",
+        "port": 32400,
+        "url_template": "http://{ip}:32400/web",
+        "instructions": (
+            "Hent <b>Plex</b> appen. Log ind med din Plex-konto — "
+            "serveren findes automatisk hvis du er på samme netværk eller Tailscale."
+        ),
+        "app_store": "https://apps.apple.com/app/plex/id383457673",
+        "play_store": "https://play.google.com/store/apps/details?id=com.plexapp.android",
+    },
+    {
+        "id": "immich",
+        "name": "Immich",
+        "tagline": "Foto- og video backup",
+        "color": "from-green-500 to-teal-600",
+        "port": 2283,
+        "url_template": "http://{ip}:2283",
+        "instructions": (
+            "Hent <b>Immich</b> appen. Tryk <i>Server endpoint</i> og indsæt URL'en. "
+            "Aktiver <i>Auto backup</i> så telefonens fotos sikkerhedskopieres automatisk."
+        ),
+        "app_store": "https://apps.apple.com/app/immich/id1613945652",
+        "play_store": "https://play.google.com/store/apps/details?id=app.alextran.immich",
+    },
+    {
+        "id": "nextcloud",
+        "name": "Nextcloud",
+        "tagline": "Filer, kalender og kontakter",
+        "color": "from-blue-400 to-cyan-600",
+        "port": 8080,
+        "url_template": "http://{ip}:8080",
+        "instructions": (
+            "Hent <b>Nextcloud</b> appen. Vælg <i>Log in via web</i> og indtast URL'en. "
+            "iOS: hent også <i>Files: Nextcloud</i> for share-sheet integration."
+        ),
+        "app_store": "https://apps.apple.com/app/nextcloud/id1125420102",
+        "play_store": "https://play.google.com/store/apps/details?id=com.nextcloud.client",
+    },
+]
+
+
+@app.get("/connect", response_class=HTMLResponse)
+async def connect_page(request: Request):
+    config = load_config()
+    host = request.headers.get("host", "")
+    ip = host.split(":")[0] if host else config.get("tailscale_ip", TAILSCALE_IP)
+    services = []
+    for s in CONNECT_SERVICES:
+        url = s["url_template"].format(ip=ip)
+        qr = segno.make(url, error="m").svg_inline(scale=4, dark="#0ea5e9", light=None, border=2)
+        services.append({**s, "url": url, "qr_svg": qr})
+    return templates.TemplateResponse("connect.html", {
+        "request": request,
+        "config": config,
+        "services": services,
+        "host_ip": ip,
+    })
 
 
 # ---------------------------------------------------------------------------
