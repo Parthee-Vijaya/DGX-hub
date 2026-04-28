@@ -113,9 +113,9 @@ SERVICES = [
         "description": "Privat cloud",
         "subtitle": "Filer, kalender, kontakter og samarbejde",
         "icon": "cloud",
-        "port": 8080,
-        "url_template": "http://{ip}:8080",
-        "health_url": "http://localhost:8080/status.php",
+        "port": 8090,
+        "url_template": "http://{ip}:8090",
+        "health_url": "http://localhost:8090/status.php",
         "color": "from-blue-400 to-cyan-600",
         "category": "media",
     },
@@ -796,8 +796,8 @@ CONNECT_SERVICES = [
         "name": "Nextcloud",
         "tagline": "Filer, kalender og kontakter",
         "color": "from-blue-400 to-cyan-600",
-        "port": 8080,
-        "url_template": "http://{ip}:8080",
+        "port": 8090,
+        "url_template": "http://{ip}:8090",
         "instructions": (
             "Hent <b>Nextcloud</b> appen. Vælg <i>Log in via web</i> og indtast URL'en. "
             "iOS: hent også <i>Files: Nextcloud</i> for share-sheet integration."

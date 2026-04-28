@@ -4,7 +4,7 @@ from .base import DockerInstaller, InstallContext, gen_secret
 class NextcloudInstaller(DockerInstaller):
     id = "nextcloud"
     name = "Nextcloud"
-    port = 8080
+    port = 8090
     container_names = ["nextcloud", "nextcloud_db"]
     compose_template = "nextcloud/docker-compose.yml.j2"
     data_subdirs = ["data", "config", "db"]

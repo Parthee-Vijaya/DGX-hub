@@ -6,7 +6,7 @@ services:
     container_name: nextcloud
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8090:80"
     volumes:
       - {{ data_dir }}/data:/var/www/html/data
       - {{ data_dir }}/config:/var/www/html/config
