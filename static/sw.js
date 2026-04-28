@@ -1,5 +1,5 @@
-const CACHE = 'spark-hub-v1';
-const PRECACHE = ['/', '/dashboard', '/chat', '/system', '/settings'];
+const CACHE = 'spark-hub-v2';
+const PRECACHE = ['/', '/dashboard', '/chat', '/system', '/settings', '/connect', '/static/tailwind.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(PRECACHE)));
