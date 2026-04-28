@@ -2,13 +2,13 @@ services:
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
-    user: "1000:1000"
+    user: "{{ uid }}:{{ gid }}"
     restart: unless-stopped
     ports:
       - "8096:8096"
     volumes:
-      - /home/dgx-3/jellyfin/config:/config
-      - /home/dgx-3/jellyfin/cache:/cache
-      - /home/dgx-3/Media:/media:ro
+      - {{ data_dir }}/config:/config
+      - {{ data_dir }}/cache:/cache
+      - {{ media_root }}:/media:ro
     environment:
-      - TZ=Europe/Copenhagen
+      - TZ={{ tz }}

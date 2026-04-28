@@ -8,7 +8,7 @@ services:
     ports:
       - "2283:2283"
     volumes:
-      - /home/dgx-3/immich/data/library:/usr/src/app/upload
+      - {{ data_dir }}/library:/usr/src/app/upload
       - /etc/localtime:/etc/localtime:ro
     env_file:
       - .env
@@ -23,7 +23,7 @@ services:
     image: ghcr.io/immich-app/immich-machine-learning:release
     restart: unless-stopped
     volumes:
-      - /home/dgx-3/immich/data/model-cache:/cache
+      - {{ data_dir }}/model-cache:/cache
     env_file:
       - .env
 
@@ -47,7 +47,7 @@ services:
       POSTGRES_DB: ${DB_DATABASE_NAME}
       POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
-      - /home/dgx-3/immich/data/postgres:/var/lib/postgresql/data
+      - {{ data_dir }}/postgres:/var/lib/postgresql/data
     healthcheck:
       test: pg_isready --dbname='${DB_DATABASE_NAME}' --username='${DB_USERNAME}' || exit 1; Chksum="$$(psql --dbname='${DB_DATABASE_NAME}' --username='${DB_USERNAME}' --tuples-only --no-align --command='SELECT COALESCE(SUM(checksum_failures), 0) FROM pg_stat_database')"; echo "checksum failure count - $Chksum"; [ "$Chksum" = '0' ] || exit 1
       interval: 5m

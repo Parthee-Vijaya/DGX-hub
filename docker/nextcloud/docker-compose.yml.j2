@@ -8,16 +8,18 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - /home/dgx-3/nextcloud/data:/var/www/html/data
-      - /home/dgx-3/nextcloud/config:/var/www/html/config
-      - /home/dgx-3/Media:/media:ro
+      - {{ data_dir }}/data:/var/www/html/data
+      - {{ data_dir }}/config:/var/www/html/config
+      - {{ media_root }}:/media:ro
     environment:
       - MYSQL_HOST=nextcloud-db
       - MYSQL_DATABASE=nextcloud
       - MYSQL_USER=nextcloud
-      - MYSQL_PASSWORD=nextcloud_secret_2024
-      - NEXTCLOUD_TRUSTED_DOMAINS=192.168.1.95 100.92.142.31 localhost spark-aaa6
-      - TZ=Europe/Copenhagen
+      - MYSQL_PASSWORD={{ db_password }}
+      - NEXTCLOUD_ADMIN_USER={{ admin_user }}
+      - NEXTCLOUD_ADMIN_PASSWORD={{ admin_password }}
+      - NEXTCLOUD_TRUSTED_DOMAINS={{ trusted_domains }}
+      - TZ={{ tz }}
     depends_on:
       - nextcloud-db
 
@@ -26,9 +28,9 @@ services:
     container_name: nextcloud_db
     restart: unless-stopped
     environment:
-      - MYSQL_ROOT_PASSWORD=nextcloud_root_2024
+      - MYSQL_ROOT_PASSWORD={{ db_root_password }}
       - MYSQL_DATABASE=nextcloud
       - MYSQL_USER=nextcloud
-      - MYSQL_PASSWORD=nextcloud_secret_2024
+      - MYSQL_PASSWORD={{ db_password }}
     volumes:
-      - /home/dgx-3/nextcloud/db:/var/lib/mysql
+      - {{ data_dir }}/db:/var/lib/mysql

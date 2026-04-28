@@ -6,6 +6,7 @@ Port 7863
 
 import json
 import asyncio
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -16,6 +17,9 @@ from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
+from installers import REGISTRY as INSTALLER_REGISTRY
+from installers.base import InstallContext
 
 # ---------------------------------------------------------------------------
 # Config
@@ -29,10 +33,13 @@ DEFAULT_CONFIG = {
     "setup_done": False,
     "server_name": "Spark Hub",
     "tailscale_ip": TAILSCALE_IP,
+    "media_root": str(Path.home() / "Media"),
     "media_paths": {
         "film": str(Path.home() / "Media/film"),
         "serier": str(Path.home() / "Media/serier"),
+        "fotos": str(Path.home() / "Media/fotos"),
     },
+    "installed_services": [],
 }
 
 SERVICES = [
@@ -597,6 +604,190 @@ async def chat_models():
         return JSONResponse({"models": models})
     except Exception:
         return JSONResponse({"models": []})
+
+
+# ---------------------------------------------------------------------------
+# Installer / setup-wizard backend
+# ---------------------------------------------------------------------------
+
+def _build_install_context(body: dict) -> InstallContext:
+    home = str(Path.home())
+    media_root = body.get("media_root") or f"{home}/Media"
+    return InstallContext(
+        home=home,
+        uid=os.getuid(),
+        gid=os.getgid(),
+        tz=body.get("tz", "Europe/Copenhagen"),
+        media_root=media_root,
+        nextcloud_admin_user=body.get("nextcloud_admin_user", "admin"),
+        nextcloud_admin_password=body.get("nextcloud_admin_password", ""),
+        trusted_domains=body.get("trusted_domains", "localhost"),
+        extras=body.get("extras", {}),
+    )
+
+
+@app.get("/api/installer/registry")
+async def installer_registry():
+    """Static list of installable services for the wizard UI."""
+    return JSONResponse({
+        "services": [
+            {
+                "id": inst.id,
+                "name": inst.name,
+                "port": inst.port,
+                "requires_docker": inst.requires_docker,
+                "requires_helper": inst.requires_helper,
+            }
+            for inst in INSTALLER_REGISTRY.values()
+        ]
+    })
+
+
+@app.get("/api/installer/detect")
+async def installer_detect():
+    """Probe each registered service and report install/run state."""
+    results = {}
+    for sid, inst in INSTALLER_REGISTRY.items():
+        try:
+            results[sid] = await inst.detect()
+        except Exception as e:
+            results[sid] = {"installed": False, "running": False, "error": str(e)}
+    return JSONResponse({
+        "services": results,
+        "host": {
+            "docker": _have_cmd("docker"),
+            "uid": os.getuid(),
+            "home": str(Path.home()),
+            "helper": Path("/usr/local/bin/spark-hub-helper").exists(),
+        },
+    })
+
+
+@app.post("/api/installer/install")
+async def installer_install(request: Request):
+    """Install one or more services and stream log lines as SSE.
+
+    Body: {services: [...], media_root, nextcloud_admin_user, nextcloud_admin_password, ...}
+    """
+    body = await request.json()
+    service_ids = body.get("services", [])
+    ctx = _build_install_context(body)
+
+    # Pre-create media root + sub-folders
+    Path(ctx.media_root).mkdir(parents=True, exist_ok=True)
+    for sub in ("film", "serier", "fotos"):
+        (Path(ctx.media_root) / sub).mkdir(exist_ok=True)
+
+    # Persist intent to config now (so a refresh reflects choices)
+    config = load_config()
+    config["media_root"] = ctx.media_root
+    config["media_paths"] = {
+        "film": f"{ctx.media_root}/film",
+        "serier": f"{ctx.media_root}/serier",
+        "fotos": f"{ctx.media_root}/fotos",
+    }
+    if ctx.nextcloud_admin_user:
+        config["nextcloud_admin_user"] = ctx.nextcloud_admin_user
+    save_config(config)
+
+    async def event_generator():
+        installed_ok: list[str] = []
+        for sid in service_ids:
+            inst = INSTALLER_REGISTRY.get(sid)
+            if not inst:
+                yield _sse({"service": sid, "level": "error", "line": f"ukendt service: {sid}"})
+                continue
+
+            yield _sse({"service": sid, "level": "info", "line": f"=== Installerer {inst.name} ==="})
+            ok = True
+            try:
+                async for line in inst.install(ctx):
+                    if line.startswith("__exit__:"):
+                        rc = int(line.split(":", 1)[1])
+                        if rc != 0:
+                            ok = False
+                            yield _sse({
+                                "service": sid, "level": "error",
+                                "line": f"kommando fejlede med exit {rc}",
+                            })
+                        continue
+                    level = "error" if line.startswith("ERROR") else "log"
+                    if level == "error":
+                        ok = False
+                    yield _sse({"service": sid, "level": level, "line": line})
+            except Exception as e:
+                ok = False
+                yield _sse({"service": sid, "level": "error", "line": f"undtagelse: {e}"})
+
+            if ok:
+                installed_ok.append(sid)
+                yield _sse({"service": sid, "level": "ok", "line": f"{inst.name} installeret"})
+            else:
+                yield _sse({"service": sid, "level": "error", "line": f"{inst.name} fejlede"})
+
+        # Update installed_services in config
+        config = load_config()
+        prev = set(config.get("installed_services", []))
+        config["installed_services"] = sorted(prev.union(installed_ok))
+        save_config(config)
+        yield _sse({"service": "_done", "level": "info", "line": "alle handlinger udført",
+                    "installed": installed_ok})
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/installer/start/{service_id}")
+async def installer_start(service_id: str):
+    inst = INSTALLER_REGISTRY.get(service_id)
+    if not inst:
+        return JSONResponse({"ok": False, "error": "unknown service"}, status_code=404)
+    lines = []
+    rc = 0
+    async for line in inst.start():
+        if line.startswith("__exit__:"):
+            rc = int(line.split(":", 1)[1])
+            continue
+        lines.append(line)
+    return JSONResponse({"ok": rc == 0, "rc": rc, "log": lines})
+
+
+@app.post("/api/installer/stop/{service_id}")
+async def installer_stop(service_id: str):
+    inst = INSTALLER_REGISTRY.get(service_id)
+    if not inst:
+        return JSONResponse({"ok": False, "error": "unknown service"}, status_code=404)
+    lines = []
+    rc = 0
+    async for line in inst.stop():
+        if line.startswith("__exit__:"):
+            rc = int(line.split(":", 1)[1])
+            continue
+        lines.append(line)
+    return JSONResponse({"ok": rc == 0, "rc": rc, "log": lines})
+
+
+@app.post("/api/installer/restart/{service_id}")
+async def installer_restart(service_id: str):
+    inst = INSTALLER_REGISTRY.get(service_id)
+    if not inst:
+        return JSONResponse({"ok": False, "error": "unknown service"}, status_code=404)
+    lines = []
+    rc = 0
+    async for line in inst.restart():
+        if line.startswith("__exit__:"):
+            rc = int(line.split(":", 1)[1])
+            continue
+        lines.append(line)
+    return JSONResponse({"ok": rc == 0, "rc": rc, "log": lines})
+
+
+def _have_cmd(name: str) -> bool:
+    import shutil
+    return shutil.which(name) is not None
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 # ---------------------------------------------------------------------------
