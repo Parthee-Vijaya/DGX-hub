@@ -130,6 +130,18 @@
   </div>
 </section>
 
+<!-- ====== VLLM MODEL SWITCHER ====== -->
+<section class="mb-6 animate-fade-up delay-2">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest">vLLM aktiv model</h2>
+    <span class="text-[10px] text-gray-600" id="vllm-active-label">--</span>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="vllm-models-grid">
+    <p class="text-gray-600 text-xs">Henter modeller...</p>
+  </div>
+  <div id="vllm-switch-msg" class="hidden mt-3 text-[11px] font-mono"></div>
+</section>
+
 <!-- ====== QUICK LINKS ====== -->
 <section class="mb-6 animate-fade-up delay-3">
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -169,6 +181,37 @@
         <p class="text-[10px] text-gray-500">Powerful off</p>
       </div>
     </button>
+  </div>
+</section>
+
+<!-- ====== SPEEDTEST ====== -->
+<section class="mb-6 animate-fade-up delay-3">
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest">Internet hastighed</h2>
+      <button onclick="runSpeedtest()" id="speedtest-btn"
+              class="py-1.5 px-4 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 text-sky-300 text-xs font-semibold rounded-lg transition-all">
+        Kør speedtest
+      </button>
+    </div>
+    <div class="grid grid-cols-3 gap-4" id="speedtest-grid">
+      <div class="text-center">
+        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ping</p>
+        <p class="text-2xl font-bold text-white tabular-nums" id="st-ping">--</p>
+        <p class="text-[10px] text-gray-600">ms</p>
+      </div>
+      <div class="text-center">
+        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Download</p>
+        <p class="text-2xl font-bold text-emerald-300 tabular-nums" id="st-down">--</p>
+        <p class="text-[10px] text-gray-600">Mbps</p>
+      </div>
+      <div class="text-center">
+        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Upload</p>
+        <p class="text-2xl font-bold text-sky-300 tabular-nums" id="st-up">--</p>
+        <p class="text-[10px] text-gray-600">Mbps</p>
+      </div>
+    </div>
+    <p class="text-[10px] text-gray-600 mt-3 text-center" id="st-meta"></p>
   </div>
 </section>
 
@@ -221,14 +264,21 @@
   NVIDIA DGX Spark &bull; {{ config.tailscale_ip }}
 </div>
 
-<!-- ===== Logs modal ===== -->
+<!-- ===== Logs modal (live SSE) ===== -->
 <div id="logs-modal" class="hidden fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) hideLogs()">
-  <div class="glass rounded-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
-    <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+  <div class="glass rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+    <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between gap-3">
       <h3 class="text-sm font-semibold text-white" id="logs-title">Logs</h3>
-      <button onclick="hideLogs()" class="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+      <span id="logs-status" class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400">Forbinder...</span>
+      <div class="ml-auto flex items-center gap-2">
+        <label class="text-[10px] text-gray-500 flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" id="logs-autoscroll" checked class="accent-sky-500"> Auto-scroll
+        </label>
+        <button onclick="clearLogs()" class="text-[10px] text-gray-500 hover:text-white px-2 py-1 rounded hover:bg-white/5">Ryd</button>
+        <button onclick="hideLogs()" class="text-gray-500 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
     </div>
-    <pre id="logs-body" class="flex-1 overflow-auto p-5 text-[11px] text-gray-300 font-mono whitespace-pre-wrap leading-relaxed">Indlæser...</pre>
+    <pre id="logs-body" class="flex-1 overflow-auto p-5 text-[11px] text-gray-300 font-mono whitespace-pre-wrap leading-relaxed bg-black/40"></pre>
   </div>
 </div>
 
@@ -307,7 +357,7 @@
       if (grid.children.length !== cores.length) {
         grid.innerHTML = cores.map((_, i) => `
           <div class="core-cell rounded-md text-center py-1.5 px-1" id="core-${i}" style="background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.2)">
-            <div class="text-[9px] text-gray-500 font-mono">${i}</div>
+            <div class="text-[9px] text-gray-500 font-mono">${i + 1}</div>
             <div class="text-[11px] font-bold text-white tabular-nums" id="core-${i}-pct">--</div>
           </div>`).join('');
       }
@@ -433,24 +483,56 @@
     }
   }
 
-  async function showLogs(sid) {
+  let logsSource = null;
+  let logsLineCount = 0;
+  const LOGS_MAX_LINES = 2000;
+
+  function setLogsStatus(text, color) {
+    const el = document.getElementById('logs-status');
+    el.textContent = text;
+    el.className = `text-[10px] font-medium px-2 py-0.5 rounded-full ${color}`;
+  }
+
+  function appendLogLine(line) {
+    const body = document.getElementById('logs-body');
+    const autoscroll = document.getElementById('logs-autoscroll').checked;
+    body.textContent += (body.textContent ? '\n' : '') + line;
+    logsLineCount++;
+    // Trim hvis for langt
+    if (logsLineCount > LOGS_MAX_LINES) {
+      const lines = body.textContent.split('\n');
+      body.textContent = lines.slice(lines.length - LOGS_MAX_LINES).join('\n');
+      logsLineCount = LOGS_MAX_LINES;
+    }
+    if (autoscroll) body.scrollTop = body.scrollHeight;
+  }
+
+  function clearLogs() {
+    document.getElementById('logs-body').textContent = '';
+    logsLineCount = 0;
+  }
+
+  function showLogs(sid) {
     const modal = document.getElementById('logs-modal');
     const title = document.getElementById('logs-title');
-    const body = document.getElementById('logs-body');
-    title.textContent = `Logs — ${sid}`;
-    body.textContent = 'Indlæser...';
+    title.textContent = `Logs — ${sid} (live)`;
+    clearLogs();
     modal.classList.remove('hidden');
-    try {
-      const r = await fetch(`/api/services/${sid}/logs?lines=200`);
-      const data = await r.json();
-      body.textContent = (data.lines || []).join('\n') || '(ingen log-entries)';
-      body.scrollTop = body.scrollHeight;
-    } catch (e) {
-      body.textContent = 'Fejl: ' + e.message;
-    }
+    setLogsStatus('Forbinder...', 'bg-gray-500/20 text-gray-400');
+
+    if (logsSource) { try { logsSource.close(); } catch {} }
+    logsSource = new EventSource(`/api/services/${sid}/logs/stream?lines=100`);
+    logsSource.onopen = () => setLogsStatus('● LIVE', 'bg-green-500/20 text-green-400 status-pulse');
+    logsSource.onmessage = (e) => appendLogLine(e.data);
+    logsSource.onerror = () => {
+      setLogsStatus('Afbrudt', 'bg-red-500/20 text-red-400');
+      if (logsSource) { try { logsSource.close(); } catch {} logsSource = null; }
+    };
   }
+
   function hideLogs() {
     document.getElementById('logs-modal').classList.add('hidden');
+    if (logsSource) { try { logsSource.close(); } catch {} logsSource = null; }
   }
 
   // ============================================================
@@ -470,11 +552,148 @@
   }
 
   // ============================================================
+  // vLLM model switcher
+  // ============================================================
+  async function refreshVllmModels() {
+    try {
+      const data = await (await fetch('/api/vllm/models')).json();
+      document.getElementById('vllm-active-label').textContent = 'aktiv: ' + (data.active || '--');
+      const grid = document.getElementById('vllm-models-grid');
+      grid.innerHTML = data.models.map(m => `
+        <div class="glass rounded-2xl p-4 ${m.active ? 'border-sky-500/40' : ''}" style="${m.active ? 'border-color:rgba(14,165,233,0.4)' : ''}">
+          <div class="flex items-center gap-2 mb-1">
+            <div class="w-2 h-2 rounded-full ${m.active ? 'bg-sky-400 status-pulse' : 'bg-gray-600'}"></div>
+            <h3 class="text-sm font-bold text-white flex-1">${m.name}</h3>
+            <span class="text-[9px] text-gray-600 font-mono">${(m.context/1024).toFixed(0)}K</span>
+          </div>
+          <p class="text-[11px] text-gray-500 mb-1">${m.description}</p>
+          <p class="text-[10px] text-gray-700 font-mono mb-3 truncate" title="${m.huggingface}">${m.huggingface}</p>
+          <button
+            onclick="switchVllm('${m.id}')"
+            ${m.active ? 'disabled' : ''}
+            class="w-full py-1.5 px-3 text-[11px] font-semibold rounded-lg transition-all ${m.active
+              ? 'bg-sky-500/10 text-sky-300 border border-sky-500/20 cursor-default'
+              : 'bg-white/5 hover:bg-amber-500/20 border border-white/10 hover:border-amber-500/30 text-gray-300 hover:text-amber-300'}">
+            ${m.active ? '✓ Aktiv' : 'Aktivér (genstart vLLM)'}
+          </button>
+        </div>`).join('');
+    } catch (e) {
+      console.error('vllm models', e);
+    }
+  }
+
+  async function switchVllm(model) {
+    if (!confirm(`Skift vLLM til "${model}"? vLLM genstartes — modellen loader i 1-3 minutter.`)) return;
+    const msg = document.getElementById('vllm-switch-msg');
+    msg.className = 'mt-3 text-[11px] font-mono text-amber-400';
+    msg.classList.remove('hidden');
+    msg.textContent = 'Sender skift...';
+    try {
+      const r = await fetch('/api/vllm/switch', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({model})
+      });
+      const data = await r.json();
+      if (!data.ok) {
+        msg.className = 'mt-3 text-[11px] font-mono text-red-400';
+        msg.textContent = 'Fejl: ' + (data.stderr || data.error || 'ukendt');
+        return;
+      }
+      msg.textContent = `Skiftet til "${model}". Venter på at modellen loader (op til 3 min)...`;
+      refreshVllmModels();
+      refreshServices();
+      // Poll vllm.service indtil active+responsive eller 4 minutter
+      const start = Date.now();
+      while (Date.now() - start < 240000) {
+        await new Promise(r => setTimeout(r, 4000));
+        const s = await (await fetch('/api/services/vllm/status')).json();
+        if (s.active === 'active' && s.responsive) {
+          msg.className = 'mt-3 text-[11px] font-mono text-green-400';
+          msg.textContent = `vLLM kører "${model}" (${s.latency_ms} ms)`;
+          setTimeout(() => msg.classList.add('hidden'), 6000);
+          break;
+        }
+        if (s.active === 'failed') {
+          msg.className = 'mt-3 text-[11px] font-mono text-red-400';
+          msg.textContent = 'vLLM failed — tjek logs';
+          break;
+        }
+      }
+    } catch (e) {
+      msg.className = 'mt-3 text-[11px] font-mono text-red-400';
+      msg.textContent = 'Netværksfejl: ' + e.message;
+    }
+  }
+
+  // ============================================================
+  // Speedtest
+  // ============================================================
+  async function pollSpeedtest() {
+    try {
+      const data = await (await fetch('/api/speedtest/status')).json();
+      const btn = document.getElementById('speedtest-btn');
+      const meta = document.getElementById('st-meta');
+      if (data.status === 'running') {
+        btn.disabled = true;
+        btn.textContent = 'Kører...';
+        btn.classList.add('opacity-50');
+        const elapsed = data.started_at ? Math.round(Date.now()/1000 - data.started_at) : 0;
+        meta.textContent = `Måler... ${elapsed}s`;
+      } else if (data.status === 'done' && data.result) {
+        btn.disabled = false;
+        btn.textContent = 'Kør igen';
+        btn.classList.remove('opacity-50');
+        document.getElementById('st-ping').textContent = data.result.ping_ms;
+        document.getElementById('st-down').textContent = data.result.download_mbps;
+        document.getElementById('st-up').textContent = data.result.upload_mbps;
+        const r = data.result;
+        const when = r.timestamp ? new Date(r.timestamp).toLocaleString('da-DK') : '';
+        meta.textContent = `${r.server_sponsor || ''} (${r.server_name || ''}, ${r.server_country || ''}) · ${when}`;
+      } else if (data.status === 'error') {
+        btn.disabled = false;
+        btn.textContent = 'Prøv igen';
+        btn.classList.remove('opacity-50');
+        meta.textContent = '⚠ ' + (data.error || 'fejl');
+      } else {
+        btn.disabled = false;
+        btn.textContent = 'Kør speedtest';
+        btn.classList.remove('opacity-50');
+      }
+    } catch (e) {}
+  }
+  async function runSpeedtest() {
+    const btn = document.getElementById('speedtest-btn');
+    btn.disabled = true;
+    btn.textContent = 'Starter...';
+    btn.classList.add('opacity-50');
+    document.getElementById('st-meta').textContent = '';
+    try {
+      const r = await fetch('/api/speedtest/run', {method: 'POST'});
+      if (r.status === 409) {
+        document.getElementById('st-meta').textContent = 'En speedtest kører allerede';
+      }
+    } catch (e) {
+      document.getElementById('st-meta').textContent = 'Netværksfejl: ' + e.message;
+    }
+    pollSpeedtest();
+    // Poll hurtigt mens den kører
+    const iv = setInterval(async () => {
+      const d = await (await fetch('/api/speedtest/status')).json();
+      pollSpeedtest();
+      if (d.status !== 'running') clearInterval(iv);
+    }, 2000);
+  }
+
+  // ============================================================
   // Poll loop
   // ============================================================
   refreshSystem();
   refreshServices();
+  refreshVllmModels();
+  pollSpeedtest();
   setInterval(refreshSystem, 3000);
   setInterval(refreshServices, 5000);
+  setInterval(refreshVllmModels, 15000);
 </script>
 {% endblock %}

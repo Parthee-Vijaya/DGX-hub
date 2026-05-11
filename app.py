@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -232,6 +232,124 @@ async def api_service_logs(sid: str, lines: int = 100):
         capture_output=True, text=True, timeout=10,
     )
     return {"unit": svc["unit"], "lines": r.stdout.splitlines()}
+
+
+@app.get("/api/services/{sid}/logs/stream")
+async def api_service_logs_stream(sid: str, lines: int = 50):
+    """Server-Sent Events stream af journalctl -f for en service."""
+    svc = SERVICES.get(sid)
+    if not svc:
+        return JSONResponse({"error": "unknown service"}, status_code=404)
+
+    async def event_stream():
+        proc = await asyncio.create_subprocess_exec(
+            "journalctl", "--user", "-u", svc["unit"],
+            "-n", str(min(max(lines, 10), 500)),
+            "-f", "--no-pager", "--output=short-iso",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                # SSE format: data: <line>\n\n
+                text = line.decode("utf-8", errors="replace").rstrip("\n")
+                # escape backslashes/newlines just in case
+                yield f"data: {text}\n\n"
+        finally:
+            try:
+                proc.terminate()
+                await asyncio.wait_for(proc.wait(), timeout=2)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# vLLM model switcher
+# ---------------------------------------------------------------------------
+
+VLLM_CONFIG_PATH = Path.home() / ".config" / "spark-hub" / "vllm-active.conf"
+VLLM_MODELS = {
+    "coder": {
+        "name": "Qwen3-Coder 30B FP8",
+        "description": "Kode-fokuseret, 65K kontekst, tool-calling",
+        "huggingface": "Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8",
+        "context": 65536,
+    },
+    "omni": {
+        "name": "Qwen3-Omni 30B",
+        "description": "Multimodal (text/image/audio/video)",
+        "huggingface": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+        "context": 32768,
+    },
+    "gptoss": {
+        "name": "GPT-OSS 120B",
+        "description": "OpenAI open-weights, harmony chat template",
+        "huggingface": "openai/gpt-oss-120b",
+        "context": 8192,
+    },
+}
+
+
+def _read_vllm_active() -> str:
+    try:
+        for line in VLLM_CONFIG_PATH.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("VLLM_MODEL="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return "coder"
+
+
+def _write_vllm_active(model: str):
+    VLLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    VLLM_CONFIG_PATH.write_text(
+        "# Aktiv vLLM model — Spark Hub bruger denne. Skift via dashboardet.\n"
+        "# Tilladte: coder, omni, gptoss\n"
+        f"VLLM_MODEL={model}\n"
+    )
+
+
+@app.get("/api/vllm/models")
+async def api_vllm_models():
+    active = _read_vllm_active()
+    return {
+        "active": active,
+        "models": [
+            {"id": mid, **meta, "active": mid == active}
+            for mid, meta in VLLM_MODELS.items()
+        ],
+    }
+
+
+@app.post("/api/vllm/switch")
+async def api_vllm_switch(payload: dict):
+    model = (payload or {}).get("model", "")
+    if model not in VLLM_MODELS:
+        return JSONResponse({"error": "unknown model"}, status_code=400)
+    _write_vllm_active(model)
+    # Restart vllm.service så wrapper plukker den nye config op
+    r = _systemctl_user("restart", "vllm.service", timeout=30)
+    return {
+        "ok": r.returncode == 0,
+        "active": model,
+        "stderr": r.stderr.strip(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +619,50 @@ def _collect_system_info() -> dict:
         active = _systemctl_user("is-active", svc["unit"], timeout=3).stdout.strip() or "inactive"
         services_state[sid] = {"active": active, "port": svc["port"]}
 
+    # --- GPU processer (nvidia-smi pmon) ---
+    gpu_procs = []
+    pmon_raw = _run("nvidia-smi pmon -c 1 -s um 2>/dev/null")
+    pid_to_cmdline = {}
+    for line in pmon_raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        # gpu_idx pid type sm% mem% enc% dec% jpg% ofa% command
+        if len(parts) < 4:
+            continue
+        try:
+            pid = parts[1]
+            proc_type = parts[2]
+            sm_pct = parts[3] if parts[3] != "-" else None
+            mem_pct = parts[4] if len(parts) > 4 and parts[4] != "-" else None
+            command = parts[-1] if parts[-1] != "-" else ""
+            gpu_procs.append({
+                "pid": pid,
+                "type": proc_type,
+                "sm_pct": _safe_int(sm_pct) if sm_pct else None,
+                "mem_pct": _safe_int(mem_pct) if mem_pct else None,
+                "command": command,
+            })
+        except Exception:
+            continue
+
+    # --- GPU clocks / throttle / pstate ---
+    gpu_extra = _run(
+        "nvidia-smi --query-gpu=pstate,clocks_throttle_reasons.active "
+        "--format=csv,noheader"
+    )
+    if gpu_extra:
+        parts = [p.strip() for p in gpu_extra.split(",")]
+        if len(parts) >= 2:
+            gpu["pstate"] = parts[0]
+            throttle_hex = parts[1]
+            # 0x0 = ingen throttle; ellers afkod bit-flags
+            gpu["throttle"] = _decode_throttle(throttle_hex)
+
+    # --- NVMe info ---
+    nvme_devices = _collect_nvme_info()
+
     return {
         "hostname": hostname,
         "os": os_info,
@@ -547,7 +709,123 @@ def _collect_system_info() -> dict:
         "display": display_raw or "Ingen skærm fundet",
         "containers": containers,
         "services": services_state,
+        "gpu_procs": gpu_procs,
+        "nvme": nvme_devices,
     }
+
+
+def _decode_throttle(hex_str: str) -> list[str]:
+    """Afkod clocks_throttle_reasons.active bit-flags."""
+    try:
+        bits = int(hex_str, 16)
+    except Exception:
+        return []
+    reasons = []
+    # Reference: https://docs.nvidia.com/deploy/nvml-api/group__nvmlClocksThrottleReasons.html
+    flags = [
+        (0x0000000000000001, "GpuIdle"),
+        (0x0000000000000002, "Applications clocks setting"),
+        (0x0000000000000004, "SW power cap"),
+        (0x0000000000000008, "HW slowdown"),
+        (0x0000000000000010, "Sync boost"),
+        (0x0000000000000020, "SW thermal slowdown"),
+        (0x0000000000000040, "HW thermal slowdown"),
+        (0x0000000000000080, "HW power brake slowdown"),
+        (0x0000000000000100, "Display clock setting"),
+    ]
+    for bit, name in flags:
+        if bits & bit:
+            reasons.append(name)
+    return reasons
+
+
+def _collect_nvme_info() -> list[dict]:
+    """Læs NVMe-info uden sudo via /sys/class/nvme + nvme list."""
+    devices = []
+
+    # Per-NVMe via sysfs
+    nvme_root = Path("/sys/class/nvme")
+    if not nvme_root.exists():
+        return devices
+
+    # Brug 'nvme list' for kapacitet/usage (kører uden sudo for list-operation)
+    usage_map = {}
+    nvme_list_raw = _run("nvme list 2>/dev/null")
+    for line in nvme_list_raw.splitlines():
+        # Format: /dev/nvme0n1 ... Usage Format FW
+        if line.startswith("/dev/nvme"):
+            parts = line.split()
+            if len(parts) >= 2:
+                # Find usage: typisk "675.47  GB /   4.10  TB"
+                # Vi finder "GB" eller "TB" og parse derudfra
+                joined = " ".join(parts)
+                usage_match = None
+                for unit in ["GB", "TB"]:
+                    if unit in joined:
+                        try:
+                            # Tag de første 4-5 tokens efter device-navn
+                            after_dev = parts[2:]  # spring /dev/nvmeXnY og /dev/ngXnY over
+                            # Find "X.XX GB / Y.YY TB" - rekonstruér
+                            usage_match = " ".join(after_dev[3:9]) if len(after_dev) > 8 else joined
+                        except Exception:
+                            usage_match = ""
+                        break
+                usage_map[parts[0]] = {
+                    "raw_line": " ".join(parts),
+                }
+
+    for ctrl_dir in sorted(nvme_root.glob("nvme*")):
+        # Spring namespaces over (nvme0n1) — kun controllers (nvme0)
+        if not ctrl_dir.name.startswith("nvme") or "n" in ctrl_dir.name[4:]:
+            continue
+        try:
+            model = (ctrl_dir / "model").read_text().strip()
+            serial = (ctrl_dir / "serial").read_text().strip()
+            firmware = (ctrl_dir / "firmware_rev").read_text().strip()
+            state = (ctrl_dir / "state").read_text().strip()
+        except Exception:
+            continue
+
+        # Temperaturer fra hwmon
+        temps = []
+        for hwmon in sorted(ctrl_dir.glob("hwmon*")):
+            for temp_input in sorted(hwmon.glob("temp*_input")):
+                try:
+                    n = temp_input.name.replace("_input", "")
+                    label_path = hwmon / f"{n}_label"
+                    label = label_path.read_text().strip() if label_path.exists() else n
+                    temp_mc = int(temp_input.read_text().strip())
+                    temps.append({"label": label, "temp_c": round(temp_mc / 1000, 1)})
+                except Exception:
+                    continue
+
+        # Find tilhørende namespace + størrelse
+        namespace = None
+        size_str = None
+        for ns_dir in sorted(ctrl_dir.glob(f"{ctrl_dir.name}n*")):
+            namespace = ns_dir.name
+            size_sec_path = ns_dir / "size"
+            if size_sec_path.exists():
+                try:
+                    sectors = int(size_sec_path.read_text().strip())
+                    # NVMe sektor 512 bytes
+                    size_str = f"{sectors * 512 / 1e12:.2f} TB"
+                except Exception:
+                    pass
+            break
+
+        devices.append({
+            "device": ctrl_dir.name,
+            "namespace": namespace,
+            "size": size_str or "?",
+            "model": model,
+            "serial": serial,
+            "firmware": firmware,
+            "state": state,
+            "temperatures": temps,
+        })
+
+    return devices
 
 
 def _parse_ps(raw: str) -> list[dict]:
@@ -579,6 +857,79 @@ def _safe_float(v) -> float | None:
         return float(v)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Speedtest (speedtest-cli)
+# ---------------------------------------------------------------------------
+
+_speedtest_state: dict = {
+    "status": "idle",  # idle | running | done | error
+    "started_at": None,
+    "finished_at": None,
+    "result": None,
+    "error": None,
+}
+_speedtest_lock = asyncio.Lock()
+
+
+async def _run_speedtest():
+    """Kør speedtest-cli og gem resultatet i _speedtest_state."""
+    import json as _json
+    global _speedtest_state
+    _speedtest_state.update({
+        "status": "running",
+        "started_at": time.time(),
+        "finished_at": None,
+        "result": None,
+        "error": None,
+    })
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            str(Path(__file__).parent / "venv" / "bin" / "speedtest-cli"),
+            "--json", "--secure",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        if proc.returncode != 0:
+            raise RuntimeError(stderr.decode("utf-8", "replace")[:500])
+        data = _json.loads(stdout.decode("utf-8", "replace"))
+        _speedtest_state.update({
+            "status": "done",
+            "finished_at": time.time(),
+            "result": {
+                "download_mbps": round(data["download"] / 1e6, 2),
+                "upload_mbps": round(data["upload"] / 1e6, 2),
+                "ping_ms": round(data["ping"], 1),
+                "server_name": data.get("server", {}).get("name", ""),
+                "server_country": data.get("server", {}).get("country", ""),
+                "server_sponsor": data.get("server", {}).get("sponsor", ""),
+                "bytes_sent": data.get("bytes_sent"),
+                "bytes_received": data.get("bytes_received"),
+                "timestamp": data.get("timestamp"),
+            },
+        })
+    except Exception as e:
+        _speedtest_state.update({
+            "status": "error",
+            "finished_at": time.time(),
+            "error": str(e)[:500],
+        })
+
+
+@app.post("/api/speedtest/run")
+async def api_speedtest_run():
+    async with _speedtest_lock:
+        if _speedtest_state["status"] == "running":
+            return JSONResponse({"error": "already running"}, status_code=409)
+        asyncio.create_task(_run_speedtest())
+    return {"ok": True, "status": "running"}
+
+
+@app.get("/api/speedtest/status")
+async def api_speedtest_status():
+    return _speedtest_state
 
 
 # ---------------------------------------------------------------------------

@@ -116,6 +116,30 @@
   </div>
 </div>
 
+<!-- GPU processer + NVMe info -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 animate-fade-up delay-3">
+  <div class="glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">GPU processer</h2>
+      <span class="text-[10px] text-gray-600 font-mono" id="s-gpu-pstate">--</span>
+    </div>
+    <div id="s-gpu-throttle" class="hidden mb-2 text-[10px] text-amber-400 font-medium"></div>
+    <div class="grid grid-cols-12 gap-2 text-[9px] text-gray-600 uppercase tracking-wider font-medium pb-2 border-b border-white/5 mb-1">
+      <span class="col-span-2">PID</span>
+      <span class="col-span-1">Type</span>
+      <span class="col-span-5">Command</span>
+      <span class="col-span-2 text-right">SM%</span>
+      <span class="col-span-2 text-right">Mem%</span>
+    </div>
+    <div id="s-gpu-procs" class="text-[11px]"></div>
+  </div>
+
+  <div class="glass rounded-2xl p-5">
+    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">NVMe diske</h2>
+    <div id="s-nvme" class="space-y-3 text-xs"></div>
+  </div>
+</div>
+
 <!-- Top processer -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 animate-fade-up delay-3">
   <div class="glass rounded-2xl p-5">
@@ -256,7 +280,7 @@
       if (grid.children.length !== cores.length) {
         grid.innerHTML = cores.map((_, i) => `
           <div class="core-cell rounded-md text-center py-1.5 px-1" id="core-${i}" style="background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.2)">
-            <div class="text-[9px] text-gray-500 font-mono">${i}</div>
+            <div class="text-[9px] text-gray-500 font-mono">${i + 1}</div>
             <div class="text-[11px] font-bold text-white tabular-nums" id="core-${i}-pct">--</div>
           </div>`).join('');
       }
@@ -391,6 +415,51 @@
             </div>`;
           }).join('')}`;
       }
+
+      // GPU processer + throttle/pstate
+      document.getElementById('s-gpu-pstate').textContent = d.gpu.pstate ? `pstate: ${d.gpu.pstate}` : '';
+      const throttleEl = document.getElementById('s-gpu-throttle');
+      if (d.gpu.throttle && d.gpu.throttle.length > 0) {
+        throttleEl.textContent = '⚠ Throttling: ' + d.gpu.throttle.join(', ');
+        throttleEl.classList.remove('hidden');
+      } else {
+        throttleEl.classList.add('hidden');
+      }
+      const procs = d.gpu_procs || [];
+      document.getElementById('s-gpu-procs').innerHTML = procs.length === 0
+        ? '<span class="text-gray-600 text-[10px]">Ingen GPU-processer</span>'
+        : procs.map(p => `
+          <div class="grid grid-cols-12 gap-2 py-1 stat-row px-1 rounded font-mono">
+            <span class="col-span-2 text-gray-500 text-[10px]">${p.pid}</span>
+            <span class="col-span-1 text-[10px] ${p.type === 'C' ? 'text-emerald-300' : 'text-sky-300'}" title="${p.type === 'C' ? 'Compute' : 'Graphics'}">${p.type}</span>
+            <span class="col-span-5 text-white truncate text-[11px]">${p.command || ''}</span>
+            <span class="col-span-2 text-right text-[10px] text-sky-300">${p.sm_pct ?? '--'}${p.sm_pct != null ? '%' : ''}</span>
+            <span class="col-span-2 text-right text-[10px] text-emerald-300">${p.mem_pct ?? '--'}${p.mem_pct != null ? '%' : ''}</span>
+          </div>`).join('');
+
+      // NVMe diske
+      const nvme = d.nvme || [];
+      document.getElementById('s-nvme').innerHTML = nvme.length === 0
+        ? '<span class="text-gray-600 text-[10px]">Ingen NVMe enheder fundet</span>'
+        : nvme.map(n => {
+          const temps = (n.temperatures || []).map(t => {
+            const c = t.temp_c < 50 ? 'text-green-400' : t.temp_c < 65 ? 'text-yellow-400' : 'text-red-400';
+            return `<span class="${c} font-mono text-[10px]">${t.label} ${t.temp_c}°C</span>`;
+          }).join('  ');
+          return `<div class="stat-row p-2 rounded space-y-1">
+            <div class="flex justify-between items-center">
+              <span class="text-white font-semibold text-xs">${n.device} <span class="text-gray-500 font-mono text-[10px]">/dev/${n.namespace}</span></span>
+              <span class="text-gray-400 text-[10px]">${n.size}</span>
+            </div>
+            <div class="text-[10px] text-gray-400">${n.model}</div>
+            <div class="flex justify-between text-[10px] text-gray-500">
+              <span>FW <span class="font-mono">${n.firmware}</span></span>
+              <span>State <span class="text-${n.state === 'live' ? 'green' : 'amber'}-400 font-medium">${n.state}</span></span>
+              <span class="font-mono text-gray-600 truncate max-w-[120px]" title="${n.serial}">${n.serial}</span>
+            </div>
+            <div class="flex flex-wrap gap-x-3 gap-y-1 pt-1">${temps}</div>
+          </div>`;
+        }).join('');
 
       document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('da-DK');
     } catch (e) {
