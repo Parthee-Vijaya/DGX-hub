@@ -1,284 +1,350 @@
 {% extends "base.html" %}
-{% block title %}{{ config.server_name }}{% endblock %}
+{% block title %}{{ config.server_name }} :: Dashboard{% endblock %}
 
 {% block head %}
 <style>
-  .sparkline { filter: drop-shadow(0 0 3px rgba(59,130,246,0.4)); }
-  .core-cell { transition: background-color 0.4s ease; }
+  /* ─── Hero ─── */
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1.5rem;
+    align-items: end;
+  }
+  .hero-name {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    background: linear-gradient(180deg, #fff 0%, #67e8f9 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  @media (min-width: 640px) { .hero-name { font-size: 2.75rem; } }
+
+  /* ─── Big gauges ─── */
+  .gauge-num {
+    font-feature-settings: 'tnum', 'zero';
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  /* ─── Service LED ─── */
+  .led {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 8px currentColor;
+  }
+  .led-on { color: var(--lime); background: var(--lime); }
+  .led-warn { color: var(--amber); background: var(--amber); }
+  .led-err { color: var(--red); background: var(--red); }
+  .led-off { color: var(--text-faint); background: var(--text-faint); box-shadow: none; }
+
+  /* ─── Sparkline svg ─── */
+  svg.spark { width: 100%; height: 32px; }
+
+  /* ─── Per-core grid ─── */
+  .core-cell {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(34,211,238,0.1);
+    border-radius: 3px;
+    padding: 6px 4px;
+    text-align: center;
+    transition: background 0.4s, border-color 0.4s, box-shadow 0.4s;
+  }
+
+  /* ─── Action button ─── */
+  .btn-tech {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 3px;
+    transition: all 0.15s ease;
+    background: rgba(34,211,238,0.08);
+    border: 1px solid rgba(34,211,238,0.2);
+    color: var(--cyan);
+  }
+  .btn-tech:hover { background: rgba(34,211,238,0.18); border-color: rgba(34,211,238,0.4); box-shadow: 0 0 12px rgba(34,211,238,0.2); }
+  .btn-tech:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-amber { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.25); color: var(--amber); }
+  .btn-amber:hover { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.45); box-shadow: 0 0 12px rgba(245,158,11,0.2); }
+  .btn-red { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); color: var(--red); }
+  .btn-red:hover { background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.45); box-shadow: 0 0 12px rgba(239,68,68,0.2); }
 </style>
 {% endblock %}
 
 {% block content %}
 
-<!-- ====== HERO ====== -->
-<div class="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 animate-fade-up">
-  <div>
-    <p class="text-xs text-sky-400 font-semibold uppercase tracking-widest mb-1">NVIDIA DGX Spark</p>
-    <h1 class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight" id="hero-name">{{ config.server_name }}</h1>
-    <p class="text-gray-500 mt-2 text-sm flex items-center gap-3">
-      <span id="hero-uptime">---</span>
-      <span class="text-gray-700">&bull;</span>
-      <span id="hero-hostname" class="font-mono">---</span>
-    </p>
-  </div>
-  <div class="text-right">
-    <div class="text-4xl font-light text-white/80 font-mono tabular-nums" id="hero-clock">--:--:--</div>
-    <div class="text-xs text-gray-500 mt-1" id="hero-date"></div>
+<!-- ═══════════════ HERO ═══════════════ -->
+<div class="mb-6 animate-fade-up">
+  <div class="hero-grid">
+    <div>
+      <p class="font-mono text-[10px] text-cyber-400 tracking-[0.25em] uppercase mb-2">
+        ▮ NVIDIA DGX SPARK · GB10 / 128 GB UNIFIED
+      </p>
+      <h1 class="hero-name" id="hero-name">{{ config.server_name|upper }}</h1>
+      <p class="text-gray-500 mt-3 text-xs font-mono flex items-center gap-3 flex-wrap">
+        <span><span class="text-cyber-400">●</span> <span id="hero-uptime">--</span></span>
+        <span class="text-gray-700">│</span>
+        <span><span class="text-gray-600">host</span> <span class="text-gray-300" id="hero-hostname">--</span></span>
+        <span class="text-gray-700">│</span>
+        <span><span class="text-gray-600">load</span> <span class="text-gray-300" id="hero-load">--</span></span>
+        <span class="text-gray-700">│</span>
+        <span><span class="text-gray-600">proc</span> <span class="text-gray-300" id="hero-procs">--</span> / <span id="hero-threads">--</span> threads</span>
+      </p>
+    </div>
+    <div class="text-right">
+      <div class="text-3xl font-mono font-light text-white/90 num" id="hero-clock">--:--:--</div>
+      <div class="text-[10px] font-mono text-gray-500 mt-1 tracking-wider uppercase" id="hero-date"></div>
+    </div>
   </div>
 </div>
 
-<!-- ====== 4 GAUGES STRIP ====== -->
-<section class="mb-6 animate-fade-up delay-1">
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- ═══════════════ SYSTEM HEALTH STRIP ═══════════════ -->
+<div class="mb-6 animate-fade-up delay-1">
+  <div class="grid grid-cols-3 sm:grid-cols-6 gap-2">
+    <div class="panel px-3 py-2.5" id="health-units"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-1">Failed</p>
+      <p class="num text-lg font-bold" id="hl-failed">0</p>
+    </div>
+    <div class="panel px-3 py-2.5"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-1">Errors 1h</p>
+      <p class="num text-lg font-bold" id="hl-errors">0</p>
+    </div>
+    <div class="panel px-3 py-2.5"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-1">TCP est</p>
+      <p class="num text-lg font-bold text-cyber-300" id="hl-tcp">0</p>
+    </div>
+    <div class="panel px-3 py-2.5"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-1">Listen</p>
+      <p class="num text-lg font-bold text-cyber-300" id="hl-listen">0</p>
+    </div>
+    <div class="panel px-3 py-2.5"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-1">Updates</p>
+      <p class="num text-lg font-bold" id="hl-updates">--</p>
+    </div>
+    <div class="panel px-3 py-2.5"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-1">Sessions</p>
+      <p class="num text-lg font-bold text-cyber-300" id="hl-who">0</p>
+    </div>
+  </div>
+  <div id="reboot-warning" class="hidden mt-2 px-3 py-2 panel-flat text-[10px] font-mono text-amber-400" style="border-color: rgba(245,158,11,0.3)">
+    ⚠ REBOOT_REQUIRED · /var/run/reboot-required
+  </div>
+</div>
+
+<!-- ═══════════════ 4 LIVE GAUGES MED SPARKLINES ═══════════════ -->
+<div class="mb-6 animate-fade-up delay-2">
+  <div class="section-h"><span class="h-mark">▮</span> Live Metrics <span class="text-[9px] text-gray-600 tracking-normal">60s rolling</span></div>
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+
     <!-- CPU -->
-    <div class="glass rounded-2xl p-5">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">CPU</span>
-        <span class="text-xs text-gray-600 font-mono" id="g-cpu-cores">--</span>
+    <div class="panel p-4 live overflow-hidden"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[9px] font-mono uppercase tracking-widest text-gray-500">CPU</span>
+        <span class="text-[9px] font-mono text-gray-600" id="g-cpu-meta">-- cores</span>
       </div>
-      <div class="flex items-end gap-3 mb-2">
-        <div class="text-3xl font-bold text-white tabular-nums" id="g-cpu-pct">--%</div>
-        <div class="text-[10px] text-gray-500 pb-1.5">Load <span class="text-gray-300 font-mono" id="g-cpu-load">--</span></div>
+      <div class="flex items-baseline gap-1 mb-2">
+        <span class="gauge-num text-3xl text-cyber-300 num" id="g-cpu-pct">--</span>
+        <span class="text-xs text-gray-600">%</span>
       </div>
-      <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-        <div id="g-cpu-bar" class="h-full bg-gradient-to-r from-sky-400 to-blue-500 transition-all duration-500" style="width:0%"></div>
+      <svg class="spark" id="spark-cpu" viewBox="0 0 100 32" preserveAspectRatio="none" style="color:var(--cyan)">
+        <defs><linearGradient id="gr-cpu" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="currentColor" stop-opacity="0.4"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+        <polygon points="" fill="url(#gr-cpu)"/>
+        <polyline points="" fill="none" stroke="currentColor" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="flex items-center justify-between text-[9px] font-mono text-gray-600 mt-1">
+        <span>load <span class="text-gray-400" id="g-cpu-load">--</span></span>
+        <span class="text-cyber-400" id="g-cpu-freq">-- MHz</span>
       </div>
     </div>
+
     <!-- RAM -->
-    <div class="glass rounded-2xl p-5">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">RAM</span>
-        <span class="text-xs text-gray-600 font-mono" id="g-mem-tot">-- GB</span>
+    <div class="panel p-4 live overflow-hidden"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[9px] font-mono uppercase tracking-widest text-gray-500">RAM</span>
+        <span class="text-[9px] font-mono text-gray-600" id="g-mem-tot">-- GB</span>
       </div>
-      <div class="flex items-end gap-3 mb-2">
-        <div class="text-3xl font-bold text-white tabular-nums" id="g-mem-pct">--%</div>
-        <div class="text-[10px] text-gray-500 pb-1.5"><span class="text-gray-300 font-mono" id="g-mem-used">--</span> brugt</div>
+      <div class="flex items-baseline gap-1 mb-2">
+        <span class="gauge-num text-3xl text-emerald-300 num" id="g-mem-pct">--</span>
+        <span class="text-xs text-gray-600">%</span>
       </div>
-      <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-        <div id="g-mem-bar" class="h-full bg-gradient-to-r from-emerald-400 to-green-500 transition-all duration-500" style="width:0%"></div>
+      <svg class="spark" id="spark-mem" viewBox="0 0 100 32" preserveAspectRatio="none" style="color:#10b981">
+        <defs><linearGradient id="gr-mem" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="currentColor" stop-opacity="0.4"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+        <polygon points="" fill="url(#gr-mem)"/>
+        <polyline points="" fill="none" stroke="currentColor" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="flex items-center justify-between text-[9px] font-mono text-gray-600 mt-1">
+        <span><span class="text-gray-400" id="g-mem-used">--</span> used</span>
+        <span>cache <span class="text-gray-400" id="g-mem-cached">--</span></span>
       </div>
     </div>
+
     <!-- GPU -->
-    <div class="glass rounded-2xl p-5">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">GPU</span>
-        <span class="text-xs text-gray-600 font-mono" id="g-gpu-pow">--</span>
+    <div class="panel p-4 live overflow-hidden"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[9px] font-mono uppercase tracking-widest text-gray-500">GPU</span>
+        <span class="text-[9px] font-mono text-gray-600" id="g-gpu-pstate">P--</span>
       </div>
-      <div class="flex items-end gap-3 mb-2">
-        <div class="text-3xl font-bold text-white tabular-nums" id="g-gpu-temp">--&deg;</div>
-        <div class="text-[10px] text-gray-500 pb-1.5"><span class="text-gray-300 font-mono" id="g-gpu-util">--%</span> util</div>
+      <div class="flex items-baseline gap-1 mb-2">
+        <span class="gauge-num text-3xl text-amber-300 num" id="g-gpu-temp">--</span>
+        <span class="text-xs text-gray-600">°C</span>
       </div>
-      <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-        <div id="g-gpu-bar" class="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-500" style="width:0%"></div>
+      <svg class="spark" id="spark-gpu" viewBox="0 0 100 32" preserveAspectRatio="none" style="color:#f59e0b">
+        <defs><linearGradient id="gr-gpu" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="currentColor" stop-opacity="0.4"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+        <polygon points="" fill="url(#gr-gpu)"/>
+        <polyline points="" fill="none" stroke="currentColor" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="flex items-center justify-between text-[9px] font-mono text-gray-600 mt-1">
+        <span>util <span class="text-gray-400" id="g-gpu-util">--%</span></span>
+        <span class="text-amber-400" id="g-gpu-power">-- W</span>
       </div>
     </div>
-    <!-- DISK -->
-    <div class="glass rounded-2xl p-5">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">DISK /</span>
-        <span class="text-xs text-gray-600 font-mono" id="g-disk-tot">--</span>
+
+    <!-- NET -->
+    <div class="panel p-4 live overflow-hidden"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[9px] font-mono uppercase tracking-widest text-gray-500">NET</span>
+        <span class="text-[9px] font-mono text-gray-600" id="g-net-iface">--</span>
       </div>
-      <div class="flex items-end gap-3 mb-2">
-        <div class="text-3xl font-bold text-white tabular-nums" id="g-disk-pct">--%</div>
-        <div class="text-[10px] text-gray-500 pb-1.5"><span class="text-gray-300 font-mono" id="g-disk-avail">--</span> ledig</div>
+      <div class="flex items-baseline gap-1 mb-2">
+        <span class="gauge-num text-2xl text-pink-300 num" id="g-net-down">--</span>
+        <span class="text-xs text-gray-600">kB/s ↓</span>
       </div>
-      <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-        <div id="g-disk-bar" class="h-full bg-gradient-to-r from-purple-400 to-fuchsia-500 transition-all duration-500" style="width:0%"></div>
+      <svg class="spark" id="spark-net" viewBox="0 0 100 32" preserveAspectRatio="none" style="color:#ec4899">
+        <defs><linearGradient id="gr-net" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="currentColor" stop-opacity="0.4"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs>
+        <polygon points="" fill="url(#gr-net)"/>
+        <polyline points="" fill="none" stroke="currentColor" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="flex items-center justify-between text-[9px] font-mono text-gray-600 mt-1">
+        <span>↑ <span class="text-gray-400" id="g-net-up">--</span> kB/s</span>
+        <span class="text-pink-400" id="g-disk-pct">disk --%</span>
       </div>
     </div>
   </div>
-</section>
+</div>
 
-<!-- ====== SERVICES (vLLM + LiteLLM) ====== -->
-<section class="mb-6 animate-fade-up delay-2">
-  <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">AI Services</h2>
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="services-grid">
+<!-- ═══════════════ AI SERVICES ═══════════════ -->
+<div class="mb-6 animate-fade-up delay-3">
+  <div class="section-h"><span class="h-mark">▮</span> AI Services</div>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="services-grid">
     {% for sid, svc in services.items() %}
-    <div class="glass rounded-2xl p-5" id="svc-card-{{ sid }}">
-      <div class="flex items-start gap-4">
-        <div class="flex-shrink-0 mt-1">
-          <div class="w-3 h-3 rounded-full bg-gray-600 status-pulse" id="svc-led-{{ sid }}"></div>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-3 mb-1">
-            <h3 class="text-base font-bold text-white">{{ svc.name }}</h3>
-            <span class="text-[10px] font-mono text-gray-600">:{{ svc.port }}</span>
-            <span class="ml-auto text-[10px] font-semibold uppercase tracking-wider" id="svc-state-{{ sid }}">--</span>
-          </div>
-          <p class="text-xs text-gray-500 mb-3">{{ svc.description }}</p>
-          <div class="flex items-center gap-3 text-[10px] text-gray-500">
-            <span>unit: <span class="font-mono text-gray-300">{{ svc.unit }}</span></span>
-            <span id="svc-latency-{{ sid }}"></span>
-          </div>
-        </div>
+    <div class="panel p-4" id="svc-card-{{ sid }}"><span class="corner-tr"></span><span class="corner-bl"></span>
+      <div class="flex items-center gap-3 mb-1">
+        <span class="led led-off" id="svc-led-{{ sid }}"></span>
+        <span class="font-mono text-sm font-bold tracking-wide text-white">{{ svc.name|upper }}</span>
+        <span class="text-[10px] font-mono text-gray-600">:{{ svc.port }}</span>
+        <span class="ml-auto text-[9px] font-mono uppercase tracking-widest text-gray-500" id="svc-state-{{ sid }}">--</span>
       </div>
-      <div class="mt-4 pt-3 border-t border-white/5 flex items-center gap-2">
-        <button onclick="restartService('{{ sid }}')"
-                id="svc-btn-{{ sid }}"
-                class="flex-1 py-2 px-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          Genstart
+      <p class="text-[11px] text-gray-500 mb-2">{{ svc.description }}</p>
+      <div class="flex items-center gap-3 text-[10px] font-mono text-gray-600 mb-3">
+        <span>{{ svc.unit }}</span>
+        <span id="svc-latency-{{ sid }}"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="restartService('{{ sid }}')" id="svc-btn-{{ sid }}" class="btn-tech btn-amber flex-1">
+          ↻ RESTART
         </button>
-        <button onclick="showLogs('{{ sid }}')"
-                class="py-2 px-3 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium rounded-lg transition-all">
-          Logs
+        <button onclick="showLogs('{{ sid }}')" class="btn-tech">
+          LOGS
         </button>
       </div>
-      <div id="svc-msg-{{ sid }}" class="hidden mt-3 text-[10px] font-mono"></div>
+      <div id="svc-msg-{{ sid }}" class="hidden mt-2 text-[10px] font-mono"></div>
     </div>
     {% endfor %}
   </div>
-</section>
-
-<!-- ====== VLLM MODEL SWITCHER ====== -->
-<section class="mb-6 animate-fade-up delay-2">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest">vLLM aktiv model</h2>
-    <span class="text-[10px] text-gray-600" id="vllm-active-label">--</span>
-  </div>
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="vllm-models-grid">
-    <p class="text-gray-600 text-xs">Henter modeller...</p>
-  </div>
-  <div id="vllm-switch-msg" class="hidden mt-3 text-[11px] font-mono"></div>
-</section>
-
-<!-- ====== QUICK LINKS ====== -->
-<section class="mb-6 animate-fade-up delay-3">
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-    <a href="/system" class="glass glass-hover card-lift rounded-2xl p-4 flex items-center gap-3 transition-all">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500/30 to-indigo-500/30 flex items-center justify-center">
-        <svg class="w-5 h-5 text-sky-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-white">System</p>
-        <p class="text-[10px] text-gray-500">Detaljeret monitor</p>
-      </div>
-    </a>
-    <a href="/terminal" class="glass glass-hover card-lift rounded-2xl p-4 flex items-center gap-3 transition-all">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/30 to-emerald-500/30 flex items-center justify-center">
-        <svg class="w-5 h-5 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-white">Terminal</p>
-        <p class="text-[10px] text-gray-500">Direkte shell-adgang</p>
-      </div>
-    </a>
-    <button onclick="confirmPower('reboot')" class="glass glass-hover card-lift rounded-2xl p-4 flex items-center gap-3 transition-all text-left">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/30 to-orange-500/30 flex items-center justify-center">
-        <svg class="w-5 h-5 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-white">Genstart</p>
-        <p class="text-[10px] text-gray-500">Reboot maskinen</p>
-      </div>
-    </button>
-    <button onclick="confirmPower('poweroff')" class="glass glass-hover card-lift rounded-2xl p-4 flex items-center gap-3 transition-all text-left">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500/30 to-rose-500/30 flex items-center justify-center">
-        <svg class="w-5 h-5 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9"/></svg>
-      </div>
-      <div>
-        <p class="text-sm font-semibold text-white">Sluk</p>
-        <p class="text-[10px] text-gray-500">Powerful off</p>
-      </div>
-    </button>
-  </div>
-</section>
-
-<!-- ====== SPEEDTEST ====== -->
-<section class="mb-6 animate-fade-up delay-3">
-  <div class="glass rounded-2xl p-5">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-widest">Internet hastighed</h2>
-      <button onclick="runSpeedtest()" id="speedtest-btn"
-              class="py-1.5 px-4 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 text-sky-300 text-xs font-semibold rounded-lg transition-all">
-        Kør speedtest
-      </button>
-    </div>
-    <div class="grid grid-cols-3 gap-4" id="speedtest-grid">
-      <div class="text-center">
-        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Ping</p>
-        <p class="text-2xl font-bold text-white tabular-nums" id="st-ping">--</p>
-        <p class="text-[10px] text-gray-600">ms</p>
-      </div>
-      <div class="text-center">
-        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Download</p>
-        <p class="text-2xl font-bold text-emerald-300 tabular-nums" id="st-down">--</p>
-        <p class="text-[10px] text-gray-600">Mbps</p>
-      </div>
-      <div class="text-center">
-        <p class="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Upload</p>
-        <p class="text-2xl font-bold text-sky-300 tabular-nums" id="st-up">--</p>
-        <p class="text-[10px] text-gray-600">Mbps</p>
-      </div>
-    </div>
-    <p class="text-[10px] text-gray-600 mt-3 text-center" id="st-meta"></p>
-  </div>
-</section>
-
-<!-- ====== PER-CORE CPU + GPU MEMORY + DISK I/O + NET ====== -->
-<section class="mb-6 animate-fade-up delay-3">
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-    <!-- Per-core CPU heatmap -->
-    <div class="glass rounded-2xl p-5">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-widest">Per-core CPU</h3>
-        <span class="text-[10px] text-gray-600 font-mono" id="cores-model">--</span>
-      </div>
-      <div id="cores-grid" class="grid grid-cols-5 sm:grid-cols-10 gap-1.5"></div>
-    </div>
-    <!-- GPU detalje -->
-    <div class="glass rounded-2xl p-5">
-      <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">GPU detalje</h3>
-      <p class="text-sm text-white font-semibold mb-3" id="gpu-name">---</p>
-      <div class="space-y-2 text-xs">
-        <div>
-          <div class="flex justify-between text-gray-400 mb-1">
-            <span>VRAM</span>
-            <span class="text-white font-mono" id="gpu-vram">--</span>
-          </div>
-          <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-            <div id="gpu-vram-bar" class="h-full bg-gradient-to-r from-amber-400 to-rose-500 transition-all duration-500" style="width:0%"></div>
-          </div>
-        </div>
-        <div>
-          <div class="flex justify-between text-gray-400 mb-1">
-            <span>Utilization</span>
-            <span class="text-white font-mono" id="gpu-util-d">--</span>
-          </div>
-          <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-            <div id="gpu-util-bar" class="h-full bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-500" style="width:0%"></div>
-          </div>
-        </div>
-        <div class="grid grid-cols-3 gap-2 pt-2">
-          <div><p class="text-[10px] text-gray-600 uppercase">Power</p><p class="text-white font-mono" id="gpu-pwr">--</p></div>
-          <div><p class="text-[10px] text-gray-600 uppercase">Driver</p><p class="text-white font-mono" id="gpu-drv">--</p></div>
-          <div><p class="text-[10px] text-gray-600 uppercase">Clock</p><p class="text-white font-mono" id="gpu-clk">--</p></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ====== FOOTER ====== -->
-<div class="pt-6 border-t border-white/5 text-center text-[10px] text-gray-700 uppercase tracking-widest">
-  NVIDIA DGX Spark &bull; {{ config.tailscale_ip }}
 </div>
 
-<!-- ===== Logs modal (live SSE) ===== -->
-<div id="logs-modal" class="hidden fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) hideLogs()">
-  <div class="glass rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
-    <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between gap-3">
-      <h3 class="text-sm font-semibold text-white" id="logs-title">Logs</h3>
-      <span id="logs-status" class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400">Forbinder...</span>
-      <div class="ml-auto flex items-center gap-2">
-        <label class="text-[10px] text-gray-500 flex items-center gap-1.5 cursor-pointer">
-          <input type="checkbox" id="logs-autoscroll" checked class="accent-sky-500"> Auto-scroll
-        </label>
-        <button onclick="clearLogs()" class="text-[10px] text-gray-500 hover:text-white px-2 py-1 rounded hover:bg-white/5">Ryd</button>
-        <button onclick="hideLogs()" class="text-gray-500 hover:text-white text-xl leading-none px-2">&times;</button>
+<!-- ═══════════════ vLLM MODEL SWITCHER ═══════════════ -->
+<div class="mb-6 animate-fade-up delay-3">
+  <div class="section-h"><span class="h-mark">▮</span> vLLM Active Model <span class="text-gray-700 ml-2" id="vllm-active-tag"></span></div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="vllm-models-grid">
+    <p class="text-gray-600 text-xs font-mono">Loading models...</p>
+  </div>
+  <div id="vllm-switch-msg" class="hidden mt-3 text-[10px] font-mono"></div>
+</div>
+
+<!-- ═══════════════ PER-CORE CPU ═══════════════ -->
+<div class="mb-6 animate-fade-up delay-4">
+  <div class="section-h">
+    <span class="h-mark">▮</span> CPU Cores
+    <span class="text-[9px] text-gray-600 tracking-normal" id="cores-model">--</span>
+    <span class="ml-auto text-[9px] text-gray-600 tracking-normal font-mono">
+      <span class="text-cyber-400" id="cores-gov">--</span> /
+      <span id="cores-driver">--</span>
+    </span>
+  </div>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <div id="cores-grid" class="grid grid-cols-5 sm:grid-cols-10 gap-1.5"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ SPEEDTEST + QUICK ACTIONS ═══════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6 animate-fade-up delay-4">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-[10px] font-mono uppercase tracking-widest text-gray-500">▮ Internet Throughput</span>
+      <button onclick="runSpeedtest()" id="speedtest-btn" class="btn-tech">RUN TEST</button>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <div class="text-center">
+        <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono">Ping</p>
+        <p class="num text-2xl font-bold mt-1" id="st-ping">--</p>
+        <p class="text-[9px] text-gray-700 font-mono">ms</p>
+      </div>
+      <div class="text-center" style="border-left: 1px solid var(--line); border-right: 1px solid var(--line);">
+        <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono">Download</p>
+        <p class="num text-2xl font-bold mt-1 text-emerald-300" id="st-down">--</p>
+        <p class="text-[9px] text-gray-700 font-mono">Mbps</p>
+      </div>
+      <div class="text-center">
+        <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono">Upload</p>
+        <p class="num text-2xl font-bold mt-1 text-cyber-300" id="st-up">--</p>
+        <p class="text-[9px] text-gray-700 font-mono">Mbps</p>
       </div>
     </div>
-    <pre id="logs-body" class="flex-1 overflow-auto p-5 text-[11px] text-gray-300 font-mono whitespace-pre-wrap leading-relaxed bg-black/40"></pre>
+    <p class="text-[10px] font-mono text-gray-600 mt-3 text-center" id="st-meta">awaiting measurement</p>
+  </div>
+
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <div class="text-[10px] font-mono uppercase tracking-widest text-gray-500 mb-3">▮ Quick Actions</div>
+    <div class="grid grid-cols-2 gap-2">
+      <a href="/system" class="btn-tech text-center">⚙ SYSTEM DETAILS</a>
+      <a href="/terminal" class="btn-tech text-center">▶ TERMINAL</a>
+      <button onclick="confirmPower('reboot')" class="btn-tech btn-amber">↻ REBOOT</button>
+      <button onclick="confirmPower('poweroff')" class="btn-tech btn-red">⏻ SHUTDOWN</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<div class="pt-4 border-t border-cyber-500/10 text-center text-[9px] text-gray-700 font-mono tracking-widest uppercase">
+  NVIDIA DGX SPARK · {{ config.tailscale_ip }} · spark-hub :: monitor
+</div>
+
+<!-- ═══════════════ LOGS MODAL (live SSE) ═══════════════ -->
+<div id="logs-modal" class="hidden fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) hideLogs()">
+  <div class="panel w-full max-w-5xl max-h-[85vh] flex flex-col" style="background:#0a0a10">
+    <span class="corner-tr"></span><span class="corner-bl"></span>
+    <div class="px-4 py-3 border-b border-cyber-500/10 flex items-center justify-between gap-3">
+      <span class="font-mono text-sm font-bold text-white" id="logs-title">LOGS</span>
+      <span id="logs-status" class="text-[9px] font-mono font-medium px-2 py-0.5 rounded bg-gray-500/20 text-gray-400 tracking-widest">CONNECTING...</span>
+      <div class="ml-auto flex items-center gap-2">
+        <label class="text-[9px] font-mono text-gray-500 flex items-center gap-1.5 cursor-pointer tracking-wider">
+          <input type="checkbox" id="logs-autoscroll" checked class="accent-cyan-500"> AUTO-SCROLL
+        </label>
+        <button onclick="clearLogs()" class="btn-tech text-[9px]">CLEAR</button>
+        <button onclick="hideLogs()" class="text-gray-500 hover:text-white text-xl leading-none px-2 font-mono">×</button>
+      </div>
+    </div>
+    <pre id="logs-body" class="flex-1 overflow-auto p-4 text-[10.5px] text-gray-300 font-mono whitespace-pre-wrap leading-relaxed" style="background:#06060a"></pre>
   </div>
 </div>
 
@@ -287,6 +353,38 @@
 {% block scripts %}
 <script>
   // ============================================================
+  // History buffers for sparklines (60 samples ≈ 60s @ 1Hz polling)
+  // ============================================================
+  const HIST = 60;
+  const hist = { cpu: [], mem: [], gpu: [], net: [] };
+
+  function pushHist(key, value) {
+    hist[key].push(value);
+    if (hist[key].length > HIST) hist[key].shift();
+  }
+
+  function drawSpark(svgId, data, maxOverride) {
+    const svg = document.getElementById(svgId);
+    if (!svg || data.length < 2) return;
+    const w = 100, h = 32;
+    const max = maxOverride ?? Math.max(1, ...data) * 1.1;
+    const step = w / (HIST - 1);
+    const pts = data.map((v, i) => {
+      const x = i * step;
+      const y = h - (Math.min(v, max) / max) * h;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(' ');
+    const poly = svg.querySelector('polyline');
+    const fill = svg.querySelector('polygon');
+    if (poly) poly.setAttribute('points', pts);
+    if (fill) {
+      const first = `0,${h}`;
+      const last = `${((data.length - 1) * step).toFixed(2)},${h}`;
+      fill.setAttribute('points', `${first} ${pts} ${last}`);
+    }
+  }
+
+  // ============================================================
   // Clock
   // ============================================================
   function updateClock() {
@@ -294,25 +392,19 @@
     document.getElementById('hero-clock').textContent =
       now.toLocaleTimeString('da-DK', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
     document.getElementById('hero-date').textContent =
-      now.toLocaleDateString('da-DK', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+      now.toLocaleDateString('da-DK', {weekday:'short', day:'numeric', month:'short', year:'numeric'}).toUpperCase();
   }
   updateClock();
   setInterval(updateClock, 1000);
 
   // ============================================================
-  // Heat color for per-core cells
+  // Core heat colors
   // ============================================================
-  function coreColor(pct) {
-    if (pct < 20) return 'rgba(34,197,94,0.25)';
-    if (pct < 50) return 'rgba(56,189,248,0.35)';
-    if (pct < 75) return 'rgba(234,179,8,0.45)';
-    return 'rgba(239,68,68,0.55)';
-  }
-  function coreBorder(pct) {
-    if (pct < 20) return 'rgba(34,197,94,0.4)';
-    if (pct < 50) return 'rgba(56,189,248,0.5)';
-    if (pct < 75) return 'rgba(234,179,8,0.6)';
-    return 'rgba(239,68,68,0.7)';
+  function coreBg(pct) {
+    if (pct < 20) return ['rgba(163,230,53,0.10)', 'rgba(163,230,53,0.25)'];
+    if (pct < 50) return ['rgba(34,211,238,0.12)', 'rgba(34,211,238,0.35)'];
+    if (pct < 75) return ['rgba(245,158,11,0.16)', 'rgba(245,158,11,0.45)'];
+    return ['rgba(239,68,68,0.22)', 'rgba(239,68,68,0.6)'];
   }
 
   // ============================================================
@@ -325,77 +417,111 @@
       // Hero
       document.getElementById('hero-uptime').textContent = d.uptime || '';
       document.getElementById('hero-hostname').textContent = d.hostname || '';
+      document.getElementById('hero-load').textContent = (d.cpu.load_avg || []).join(' ');
+      document.getElementById('hero-procs').textContent = d.health.processes;
+      document.getElementById('hero-threads').textContent = d.health.threads;
 
-      // 4 gauges
+      // System health strip
+      const setHealth = (id, val, max, invert) => {
+        const el = document.getElementById(id);
+        el.textContent = val;
+        const bad = invert ? val < max : val > max;
+        el.className = 'num text-lg font-bold ' + (bad ? 'text-red-400' : (val > 0 && invert) ? 'text-emerald-300' : 'text-cyber-300');
+      };
+      const failedEl = document.getElementById('hl-failed');
+      failedEl.textContent = d.health.failed_units;
+      failedEl.className = 'num text-lg font-bold ' + (d.health.failed_units > 0 ? 'text-red-400' : 'text-emerald-300');
+
+      const errEl = document.getElementById('hl-errors');
+      errEl.textContent = d.health.journal_errors_1h;
+      errEl.className = 'num text-lg font-bold ' + (d.health.journal_errors_1h > 50 ? 'text-amber-400' : 'text-gray-300');
+
+      document.getElementById('hl-tcp').textContent = d.health.tcp_established;
+      document.getElementById('hl-listen').textContent = d.health.tcp_listen;
+
+      const upEl = document.getElementById('hl-updates');
+      upEl.textContent = d.health.pending_updates ?? '--';
+      upEl.className = 'num text-lg font-bold ' + ((d.health.pending_updates || 0) > 100 ? 'text-amber-400' : 'text-gray-300');
+
+      document.getElementById('hl-who').textContent = (d.health.who || []).length;
+      document.getElementById('reboot-warning').classList.toggle('hidden', !d.health.reboot_required);
+
+      // ─── CPU ───
       const cpuPct = d.cpu.usage_pct || 0;
-      document.getElementById('g-cpu-pct').textContent = cpuPct + '%';
-      document.getElementById('g-cpu-bar').style.width = cpuPct + '%';
-      document.getElementById('g-cpu-cores').textContent = (d.cpu.cores || 0) + ' cores';
-      document.getElementById('g-cpu-load').textContent = (d.cpu.load_avg || []).join(' ');
+      document.getElementById('g-cpu-pct').textContent = cpuPct.toFixed(1);
+      document.getElementById('g-cpu-meta').textContent = (d.cpu.cores || 0) + ' cores';
+      document.getElementById('g-cpu-load').textContent = (d.cpu.load_avg || []).join('/');
+      const avgFreq = (d.cpu.per_core_mhz || []).filter(f => f).reduce((a,b)=>a+b,0) /
+                       Math.max(1, (d.cpu.per_core_mhz || []).filter(f => f).length);
+      document.getElementById('g-cpu-freq').textContent = avgFreq ? avgFreq.toFixed(0) + ' MHz' : '--';
+      pushHist('cpu', cpuPct);
+      drawSpark('spark-cpu', hist.cpu, 100);
 
+      // ─── MEM ───
       const memPct = d.memory.usage_pct || 0;
-      document.getElementById('g-mem-pct').textContent = memPct + '%';
-      document.getElementById('g-mem-bar').style.width = memPct + '%';
+      document.getElementById('g-mem-pct').textContent = memPct.toFixed(1);
       document.getElementById('g-mem-tot').textContent = d.memory.total_gb + ' GB';
       document.getElementById('g-mem-used').textContent = d.memory.used_gb + ' GB';
+      document.getElementById('g-mem-cached').textContent = d.memory.cached_gb + ' GB';
+      pushHist('mem', memPct);
+      drawSpark('spark-mem', hist.mem, 100);
 
-      const gpuTemp = d.gpu.temp_c;
-      document.getElementById('g-gpu-temp').textContent = (gpuTemp != null ? gpuTemp + '°' : '--');
-      document.getElementById('g-gpu-bar').style.width = (gpuTemp != null ? Math.min(gpuTemp, 100) : 0) + '%';
-      document.getElementById('g-gpu-util').textContent = (d.gpu.util_gpu_pct != null ? d.gpu.util_gpu_pct : '--') + '%';
-      document.getElementById('g-gpu-pow').textContent = (d.gpu.power_w || '--') + (d.gpu.power_w ? ' W' : '');
+      // ─── GPU ───
+      const gpuT = d.gpu.temp_c;
+      document.getElementById('g-gpu-temp').textContent = gpuT != null ? gpuT : '--';
+      document.getElementById('g-gpu-pstate').textContent = d.gpu.pstate || 'P--';
+      document.getElementById('g-gpu-util').textContent = (d.gpu.util_gpu_pct ?? '--') + '%';
+      document.getElementById('g-gpu-power').textContent = (d.gpu.power_w || '--') + ' W';
+      pushHist('gpu', gpuT != null ? gpuT : 0);
+      drawSpark('spark-gpu', hist.gpu, 100);
 
-      const diskPctNum = parseInt(d.disk.usage_pct) || 0;
-      document.getElementById('g-disk-pct').textContent = d.disk.usage_pct;
-      document.getElementById('g-disk-bar').style.width = diskPctNum + '%';
-      document.getElementById('g-disk-tot').textContent = d.disk.total;
-      document.getElementById('g-disk-avail').textContent = d.disk.available;
+      // ─── NET ───
+      const tp = d.network.throughput || {};
+      // Find primary iface (mest aktiv eller den med IP)
+      let activeIface = null, maxRx = -1;
+      for (const [name, t] of Object.entries(tp)) {
+        if (name === 'lo') continue;
+        if ((t.rx_kbps + t.tx_kbps) > maxRx) { maxRx = t.rx_kbps + t.tx_kbps; activeIface = name; }
+      }
+      const t = activeIface ? tp[activeIface] : {rx_kbps:0, tx_kbps:0};
+      document.getElementById('g-net-iface').textContent = activeIface || '--';
+      document.getElementById('g-net-down').textContent = t.rx_kbps.toFixed(0);
+      document.getElementById('g-net-up').textContent = t.tx_kbps.toFixed(0);
+      pushHist('net', t.rx_kbps);
+      drawSpark('spark-net', hist.net);
 
-      // Per-core grid
+      const diskPct = parseInt(d.disk.usage_pct) || 0;
+      document.getElementById('g-disk-pct').textContent = 'disk ' + d.disk.usage_pct;
+
+      // ─── Per-core CPU ───
       const grid = document.getElementById('cores-grid');
       const cores = d.cpu.per_core || [];
+      const freqs = d.cpu.per_core_mhz || [];
       if (grid.children.length !== cores.length) {
         grid.innerHTML = cores.map((_, i) => `
-          <div class="core-cell rounded-md text-center py-1.5 px-1" id="core-${i}" style="background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.2)">
-            <div class="text-[9px] text-gray-500 font-mono">${i + 1}</div>
-            <div class="text-[11px] font-bold text-white tabular-nums" id="core-${i}-pct">--</div>
+          <div class="core-cell heat-cell" id="core-${i}">
+            <div class="text-[8px] text-gray-600 font-mono">${String(i + 1).padStart(2,'0')}</div>
+            <div class="text-[11px] font-bold num text-white" id="core-${i}-pct">--</div>
+            <div class="text-[7.5px] text-gray-600 font-mono mt-0.5" id="core-${i}-mhz">--</div>
           </div>`).join('');
       }
       cores.forEach((pct, i) => {
         const cell = document.getElementById(`core-${i}`);
         const txt = document.getElementById(`core-${i}-pct`);
+        const mhz = document.getElementById(`core-${i}-mhz`);
         if (cell) {
-          cell.style.background = coreColor(pct);
-          cell.style.borderColor = coreBorder(pct);
+          const [bg, border] = coreBg(pct);
+          cell.style.background = bg;
+          cell.style.borderColor = border;
         }
-        if (txt) txt.textContent = Math.round(pct) + '%';
+        if (txt) txt.textContent = Math.round(pct);
+        if (mhz) mhz.textContent = freqs[i] ? freqs[i] + ' MHz' : '--';
       });
       document.getElementById('cores-model').textContent = d.cpu.model || '';
+      document.getElementById('cores-gov').textContent = d.cpu.governor || '--';
+      document.getElementById('cores-driver').textContent = d.cpu.driver || '--';
 
-      // GPU detalje
-      document.getElementById('gpu-name').textContent = d.gpu.name || '---';
-      if (d.gpu.memory_used_mb == null) {
-        // GB10 deler memory med systemets RAM (unified memory)
-        document.getElementById('gpu-vram').textContent = 'Unified med system-RAM';
-        document.getElementById('gpu-vram-bar').style.width = (d.memory.usage_pct || 0) + '%';
-      } else {
-        const vramUsed = d.gpu.memory_used_mb;
-        const vramTotal = d.gpu.memory_total_mb || 1;
-        const vramPct = Math.round(vramUsed / vramTotal * 100);
-        document.getElementById('gpu-vram').textContent =
-          `${(vramUsed/1024).toFixed(1)} / ${(vramTotal/1024).toFixed(0)} GB (${vramPct}%)`;
-        document.getElementById('gpu-vram-bar').style.width = vramPct + '%';
-      }
-      document.getElementById('gpu-util-d').textContent = (d.gpu.util_gpu_pct ?? '--') + '%';
-      document.getElementById('gpu-util-bar').style.width = (d.gpu.util_gpu_pct || 0) + '%';
-      document.getElementById('gpu-pwr').textContent = d.gpu.power_w || '--';
-      document.getElementById('gpu-drv').textContent = d.gpu.driver || '--';
-      document.getElementById('gpu-clk').textContent =
-        (d.gpu.clock_gr_mhz ? d.gpu.clock_gr_mhz + ' MHz' : '--');
-
-    } catch (e) {
-      console.error('refreshSystem failed', e);
-    }
+    } catch (e) { console.error('refreshSystem', e); }
   }
 
   // ============================================================
@@ -404,17 +530,17 @@
   function setLed(sid, state) {
     const led = document.getElementById('svc-led-' + sid);
     const txt = document.getElementById('svc-state-' + sid);
-    let cls = 'w-3 h-3 rounded-full ', label = '', color = '';
+    let cls = 'led ', label = '', color = '';
     switch (state) {
-      case 'online':       cls += 'bg-green-400 status-pulse'; label = 'Online';      color = 'text-green-400'; break;
-      case 'active-stale': cls += 'bg-yellow-400 status-pulse'; label = 'Aktiv (port stille)'; color = 'text-yellow-400'; break;
-      case 'restarting':   cls += 'bg-amber-400 status-pulse'; label = 'Genstarter...'; color = 'text-amber-400'; break;
-      case 'failed':       cls += 'bg-red-500';                label = 'Fejlet';       color = 'text-red-400'; break;
-      case 'inactive':     cls += 'bg-gray-500';               label = 'Inaktiv';      color = 'text-gray-400'; break;
-      default:             cls += 'bg-gray-600';               label = '--';           color = 'text-gray-500';
+      case 'online':       cls += 'led-on pulse-dot';  label = 'ONLINE';       color = 'text-emerald-400'; break;
+      case 'active-stale': cls += 'led-warn pulse-dot'; label = 'STALE';        color = 'text-amber-400'; break;
+      case 'restarting':   cls += 'led-warn pulse-dot'; label = 'RESTARTING';   color = 'text-amber-400'; break;
+      case 'failed':       cls += 'led-err';            label = 'FAILED';       color = 'text-red-400'; break;
+      case 'inactive':     cls += 'led-off';            label = 'INACTIVE';     color = 'text-gray-500'; break;
+      default:             cls += 'led-off';            label = '--';           color = 'text-gray-600';
     }
     if (led) led.className = cls;
-    if (txt) { txt.textContent = label; txt.className = 'ml-auto text-[10px] font-semibold uppercase tracking-wider ' + color; }
+    if (txt) { txt.textContent = label; txt.className = 'ml-auto text-[9px] font-mono uppercase tracking-widest ' + color; }
   }
 
   async function refreshServices() {
@@ -439,190 +565,153 @@
     const btn = document.getElementById('svc-btn-' + sid);
     const msg = document.getElementById('svc-msg-' + sid);
     btn.disabled = true;
-    btn.classList.add('opacity-50');
     setLed(sid, 'restarting');
     msg.classList.remove('hidden');
-    msg.className = 'mt-3 text-[10px] font-mono text-amber-400';
-    msg.textContent = 'Sender restart...';
+    msg.className = 'mt-2 text-[10px] font-mono text-amber-400';
+    msg.textContent = '▸ sending restart...';
     try {
       const r = await fetch(`/api/services/${sid}/restart`, {method: 'POST'});
       const data = await r.json();
       if (!data.ok) {
-        msg.className = 'mt-3 text-[10px] font-mono text-red-400';
-        msg.textContent = 'Fejl: ' + (data.stderr || data.returncode);
+        msg.className = 'mt-2 text-[10px] font-mono text-red-400';
+        msg.textContent = '✗ ' + (data.stderr || data.returncode);
         btn.disabled = false;
-        btn.classList.remove('opacity-50');
         refreshServices();
         return;
       }
-      msg.textContent = 'Restart sendt. Venter på service...';
-      // poll status indtil active+responsive eller 90s
+      msg.textContent = '▸ restart sent · waiting for service...';
       const start = Date.now();
       while (Date.now() - start < 90000) {
         await new Promise(r => setTimeout(r, 2000));
         const s = await (await fetch(`/api/services/${sid}/status`)).json();
         if (s.active === 'active' && s.responsive) {
-          msg.className = 'mt-3 text-[10px] font-mono text-green-400';
-          msg.textContent = `Online igen (${s.latency_ms} ms)`;
+          msg.className = 'mt-2 text-[10px] font-mono text-emerald-400';
+          msg.textContent = `✓ online · ${s.latency_ms} ms`;
           setTimeout(() => msg.classList.add('hidden'), 4000);
           break;
         }
         if (s.active === 'failed') {
-          msg.className = 'mt-3 text-[10px] font-mono text-red-400';
-          msg.textContent = 'Service failed efter restart — tjek logs';
+          msg.className = 'mt-2 text-[10px] font-mono text-red-400';
+          msg.textContent = '✗ failed — check logs';
           break;
         }
       }
     } catch (e) {
-      msg.className = 'mt-3 text-[10px] font-mono text-red-400';
-      msg.textContent = 'Netværksfejl: ' + e.message;
+      msg.className = 'mt-2 text-[10px] font-mono text-red-400';
+      msg.textContent = '✗ ' + e.message;
     } finally {
       btn.disabled = false;
-      btn.classList.remove('opacity-50');
       refreshServices();
     }
   }
 
+  // ============================================================
+  // Live logs (SSE)
+  // ============================================================
   let logsSource = null;
   let logsLineCount = 0;
-  const LOGS_MAX_LINES = 2000;
+  const LOGS_MAX = 2000;
 
   function setLogsStatus(text, color) {
     const el = document.getElementById('logs-status');
     el.textContent = text;
-    el.className = `text-[10px] font-medium px-2 py-0.5 rounded-full ${color}`;
+    el.className = `text-[9px] font-mono font-medium px-2 py-0.5 rounded tracking-widest ${color}`;
   }
-
-  function appendLogLine(line) {
+  function appendLog(line) {
     const body = document.getElementById('logs-body');
     const autoscroll = document.getElementById('logs-autoscroll').checked;
     body.textContent += (body.textContent ? '\n' : '') + line;
     logsLineCount++;
-    // Trim hvis for langt
-    if (logsLineCount > LOGS_MAX_LINES) {
+    if (logsLineCount > LOGS_MAX) {
       const lines = body.textContent.split('\n');
-      body.textContent = lines.slice(lines.length - LOGS_MAX_LINES).join('\n');
-      logsLineCount = LOGS_MAX_LINES;
+      body.textContent = lines.slice(-LOGS_MAX).join('\n');
+      logsLineCount = LOGS_MAX;
     }
     if (autoscroll) body.scrollTop = body.scrollHeight;
   }
-
-  function clearLogs() {
-    document.getElementById('logs-body').textContent = '';
-    logsLineCount = 0;
-  }
-
+  function clearLogs() { document.getElementById('logs-body').textContent = ''; logsLineCount = 0; }
   function showLogs(sid) {
-    const modal = document.getElementById('logs-modal');
-    const title = document.getElementById('logs-title');
-    title.textContent = `Logs — ${sid} (live)`;
+    document.getElementById('logs-title').textContent = `▮ ${sid.toUpperCase()} :: live`;
     clearLogs();
-    modal.classList.remove('hidden');
-    setLogsStatus('Forbinder...', 'bg-gray-500/20 text-gray-400');
-
+    document.getElementById('logs-modal').classList.remove('hidden');
+    setLogsStatus('CONNECTING...', 'bg-gray-500/20 text-gray-400');
     if (logsSource) { try { logsSource.close(); } catch {} }
     logsSource = new EventSource(`/api/services/${sid}/logs/stream?lines=100`);
-    logsSource.onopen = () => setLogsStatus('● LIVE', 'bg-green-500/20 text-green-400 status-pulse');
-    logsSource.onmessage = (e) => appendLogLine(e.data);
+    logsSource.onopen = () => setLogsStatus('● LIVE', 'bg-emerald-500/20 text-emerald-400');
+    logsSource.onmessage = e => appendLog(e.data);
     logsSource.onerror = () => {
-      setLogsStatus('Afbrudt', 'bg-red-500/20 text-red-400');
+      setLogsStatus('DISCONNECTED', 'bg-red-500/20 text-red-400');
       if (logsSource) { try { logsSource.close(); } catch {} logsSource = null; }
     };
   }
-
   function hideLogs() {
     document.getElementById('logs-modal').classList.add('hidden');
     if (logsSource) { try { logsSource.close(); } catch {} logsSource = null; }
   }
 
   // ============================================================
-  // Power
-  // ============================================================
-  async function confirmPower(action) {
-    const label = action === 'reboot' ? 'GENSTARTE' : 'SLUKKE';
-    if (!confirm(`Er du sikker på du vil ${label} maskinen? Alle services vil blive afbrudt.`)) return;
-    if (!confirm(`Bekræft: ${label} NU?`)) return;
-    try {
-      const r = await fetch(`/api/power/${action}`, {method: 'POST'});
-      const data = await r.json();
-      if (!data.ok) alert('Fejl: ' + (data.stderr || 'ukendt'));
-    } catch (e) {
-      alert('Netværksfejl: ' + e.message);
-    }
-  }
-
-  // ============================================================
-  // vLLM model switcher
+  // vLLM switcher
   // ============================================================
   async function refreshVllmModels() {
     try {
       const data = await (await fetch('/api/vllm/models')).json();
-      document.getElementById('vllm-active-label').textContent = 'aktiv: ' + (data.active || '--');
-      const grid = document.getElementById('vllm-models-grid');
-      grid.innerHTML = data.models.map(m => `
-        <div class="glass rounded-2xl p-4 ${m.active ? 'border-sky-500/40' : ''}" style="${m.active ? 'border-color:rgba(14,165,233,0.4)' : ''}">
+      document.getElementById('vllm-active-tag').textContent = '· active = ' + data.active;
+      document.getElementById('vllm-models-grid').innerHTML = data.models.map(m => `
+        <div class="panel p-3" style="${m.active ? 'border-color:rgba(34,211,238,0.4); box-shadow: 0 0 12px rgba(34,211,238,0.08)' : ''}">
+          <span class="corner-tr"></span><span class="corner-bl"></span>
           <div class="flex items-center gap-2 mb-1">
-            <div class="w-2 h-2 rounded-full ${m.active ? 'bg-sky-400 status-pulse' : 'bg-gray-600'}"></div>
-            <h3 class="text-sm font-bold text-white flex-1">${m.name}</h3>
-            <span class="text-[9px] text-gray-600 font-mono">${(m.context/1024).toFixed(0)}K</span>
+            <span class="led ${m.active ? 'led-on pulse-dot' : 'led-off'}"></span>
+            <span class="font-mono text-xs font-bold tracking-wide text-white flex-1">${m.name.toUpperCase()}</span>
+            <span class="text-[9px] font-mono text-gray-600">${(m.context/1024).toFixed(0)}K</span>
           </div>
-          <p class="text-[11px] text-gray-500 mb-1">${m.description}</p>
-          <p class="text-[10px] text-gray-700 font-mono mb-3 truncate" title="${m.huggingface}">${m.huggingface}</p>
-          <button
-            onclick="switchVllm('${m.id}')"
-            ${m.active ? 'disabled' : ''}
-            class="w-full py-1.5 px-3 text-[11px] font-semibold rounded-lg transition-all ${m.active
-              ? 'bg-sky-500/10 text-sky-300 border border-sky-500/20 cursor-default'
-              : 'bg-white/5 hover:bg-amber-500/20 border border-white/10 hover:border-amber-500/30 text-gray-300 hover:text-amber-300'}">
-            ${m.active ? '✓ Aktiv' : 'Aktivér (genstart vLLM)'}
+          <p class="text-[10px] text-gray-500 mb-1">${m.description}</p>
+          <p class="text-[9px] text-gray-700 font-mono mb-2 truncate" title="${m.huggingface}">${m.huggingface}</p>
+          <button onclick="switchVllm('${m.id}')" ${m.active ? 'disabled' : ''}
+            class="btn-tech w-full ${m.active ? '' : 'btn-amber'}">
+            ${m.active ? '✓ ACTIVE' : '↺ ACTIVATE'}
           </button>
         </div>`).join('');
-    } catch (e) {
-      console.error('vllm models', e);
-    }
+    } catch (e) { console.error(e); }
   }
-
   async function switchVllm(model) {
     if (!confirm(`Skift vLLM til "${model}"? vLLM genstartes — modellen loader i 1-3 minutter.`)) return;
     const msg = document.getElementById('vllm-switch-msg');
-    msg.className = 'mt-3 text-[11px] font-mono text-amber-400';
+    msg.className = 'mt-3 text-[10px] font-mono text-amber-400';
     msg.classList.remove('hidden');
-    msg.textContent = 'Sender skift...';
+    msg.textContent = '▸ sending switch...';
     try {
       const r = await fetch('/api/vllm/switch', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({model})
       });
       const data = await r.json();
       if (!data.ok) {
-        msg.className = 'mt-3 text-[11px] font-mono text-red-400';
-        msg.textContent = 'Fejl: ' + (data.stderr || data.error || 'ukendt');
+        msg.className = 'mt-3 text-[10px] font-mono text-red-400';
+        msg.textContent = '✗ ' + (data.stderr || data.error);
         return;
       }
-      msg.textContent = `Skiftet til "${model}". Venter på at modellen loader (op til 3 min)...`;
+      msg.textContent = `▸ switched to "${model}" · loading model (up to 3 min)...`;
       refreshVllmModels();
       refreshServices();
-      // Poll vllm.service indtil active+responsive eller 4 minutter
       const start = Date.now();
       while (Date.now() - start < 240000) {
         await new Promise(r => setTimeout(r, 4000));
         const s = await (await fetch('/api/services/vllm/status')).json();
         if (s.active === 'active' && s.responsive) {
-          msg.className = 'mt-3 text-[11px] font-mono text-green-400';
-          msg.textContent = `vLLM kører "${model}" (${s.latency_ms} ms)`;
+          msg.className = 'mt-3 text-[10px] font-mono text-emerald-400';
+          msg.textContent = `✓ vllm running "${model}" · ${s.latency_ms} ms`;
           setTimeout(() => msg.classList.add('hidden'), 6000);
           break;
         }
         if (s.active === 'failed') {
-          msg.className = 'mt-3 text-[11px] font-mono text-red-400';
-          msg.textContent = 'vLLM failed — tjek logs';
+          msg.className = 'mt-3 text-[10px] font-mono text-red-400';
+          msg.textContent = '✗ vllm failed — check logs';
           break;
         }
       }
     } catch (e) {
-      msg.className = 'mt-3 text-[11px] font-mono text-red-400';
-      msg.textContent = 'Netværksfejl: ' + e.message;
+      msg.className = 'mt-3 text-[10px] font-mono text-red-400';
+      msg.textContent = '✗ ' + e.message;
     }
   }
 
@@ -635,54 +724,52 @@
       const btn = document.getElementById('speedtest-btn');
       const meta = document.getElementById('st-meta');
       if (data.status === 'running') {
-        btn.disabled = true;
-        btn.textContent = 'Kører...';
-        btn.classList.add('opacity-50');
+        btn.disabled = true; btn.textContent = 'RUNNING...';
         const elapsed = data.started_at ? Math.round(Date.now()/1000 - data.started_at) : 0;
-        meta.textContent = `Måler... ${elapsed}s`;
+        meta.textContent = `▸ measuring... ${elapsed}s`;
       } else if (data.status === 'done' && data.result) {
-        btn.disabled = false;
-        btn.textContent = 'Kør igen';
-        btn.classList.remove('opacity-50');
+        btn.disabled = false; btn.textContent = 'RUN AGAIN';
         document.getElementById('st-ping').textContent = data.result.ping_ms;
         document.getElementById('st-down').textContent = data.result.download_mbps;
         document.getElementById('st-up').textContent = data.result.upload_mbps;
         const r = data.result;
         const when = r.timestamp ? new Date(r.timestamp).toLocaleString('da-DK') : '';
-        meta.textContent = `${r.server_sponsor || ''} (${r.server_name || ''}, ${r.server_country || ''}) · ${when}`;
+        meta.textContent = `▸ ${r.server_sponsor || ''} :: ${r.server_name || ''}, ${r.server_country || ''} · ${when}`;
       } else if (data.status === 'error') {
-        btn.disabled = false;
-        btn.textContent = 'Prøv igen';
-        btn.classList.remove('opacity-50');
-        meta.textContent = '⚠ ' + (data.error || 'fejl');
+        btn.disabled = false; btn.textContent = 'RETRY';
+        meta.textContent = '✗ ' + (data.error || 'error');
       } else {
-        btn.disabled = false;
-        btn.textContent = 'Kør speedtest';
-        btn.classList.remove('opacity-50');
+        btn.disabled = false; btn.textContent = 'RUN TEST';
       }
     } catch (e) {}
   }
   async function runSpeedtest() {
     const btn = document.getElementById('speedtest-btn');
-    btn.disabled = true;
-    btn.textContent = 'Starter...';
-    btn.classList.add('opacity-50');
-    document.getElementById('st-meta').textContent = '';
+    btn.disabled = true; btn.textContent = 'STARTING...';
     try {
       const r = await fetch('/api/speedtest/run', {method: 'POST'});
-      if (r.status === 409) {
-        document.getElementById('st-meta').textContent = 'En speedtest kører allerede';
-      }
-    } catch (e) {
-      document.getElementById('st-meta').textContent = 'Netværksfejl: ' + e.message;
-    }
+      if (r.status === 409) document.getElementById('st-meta').textContent = '⚠ already running';
+    } catch (e) { document.getElementById('st-meta').textContent = '✗ ' + e.message; }
     pollSpeedtest();
-    // Poll hurtigt mens den kører
     const iv = setInterval(async () => {
       const d = await (await fetch('/api/speedtest/status')).json();
       pollSpeedtest();
       if (d.status !== 'running') clearInterval(iv);
     }, 2000);
+  }
+
+  // ============================================================
+  // Power
+  // ============================================================
+  async function confirmPower(action) {
+    const label = action === 'reboot' ? 'GENSTARTE' : 'SLUKKE';
+    if (!confirm(`Er du sikker på du vil ${label} maskinen? Alle services afbrydes.`)) return;
+    if (!confirm(`BEKRÆFT: ${label} NU?`)) return;
+    try {
+      const r = await fetch(`/api/power/${action}`, {method: 'POST'});
+      const data = await r.json();
+      if (!data.ok) alert('Fejl: ' + (data.stderr || 'ukendt'));
+    } catch (e) { alert('Netværksfejl: ' + e.message); }
   }
 
   // ============================================================
@@ -692,7 +779,7 @@
   refreshServices();
   refreshVllmModels();
   pollSpeedtest();
-  setInterval(refreshSystem, 3000);
+  setInterval(refreshSystem, 1000);      // 1Hz for smooth sparklines
   setInterval(refreshServices, 5000);
   setInterval(refreshVllmModels, 15000);
 </script>

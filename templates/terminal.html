@@ -1,36 +1,36 @@
 {% extends "base.html" %}
-{% block title %}Terminal — Spark Hub{% endblock %}
+{% block title %}TERMINAL :: {{ config.server_name }}{% endblock %}
 
 {% block main_class %}max-w-7xl mx-auto px-2 sm:px-4 py-4{% endblock %}
 
 {% block head %}
 <style>
-  #term-frame { background: #0a0a0f; }
   #term-fallback { display: none; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="mb-3 flex items-center gap-3 animate-fade-up">
-  <a href="/dashboard" class="text-gray-500 hover:text-white transition-colors text-xs font-medium">&larr; Dashboard</a>
-  <span class="text-gray-800">/</span>
-  <h1 class="text-sm font-semibold">Terminal</h1>
-  <span class="text-[10px] text-gray-600 font-mono ml-2" id="term-target"></span>
+  <a href="/dashboard" class="font-mono text-[10px] text-gray-500 hover:text-cyber-300 transition-colors tracking-widest uppercase">← DASHBOARD</a>
+  <span class="text-gray-700 font-mono">/</span>
+  <h1 class="font-mono text-sm font-bold tracking-widest uppercase text-white">TERMINAL</h1>
+  <span class="text-[9px] text-gray-600 font-mono ml-2" id="term-target">--</span>
   <div class="ml-auto flex items-center gap-2">
-    <button onclick="reloadTerm()" class="text-[10px] glass glass-hover px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white font-medium">Genindlæs</button>
-    <a id="term-newtab" href="#" target="_blank" class="text-[10px] glass glass-hover px-3 py-1.5 rounded-lg transition-all text-gray-400 hover:text-white font-medium">Åbn i ny fane &nearr;</a>
+    <button onclick="reloadTerm()" class="font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded transition-all text-gray-400 hover:text-cyber-300 hover:bg-cyber-500/5" style="border: 1px solid rgba(34,211,238,0.1)">↻ RELOAD</button>
+    <a id="term-newtab" href="#" target="_blank" class="font-mono text-[10px] uppercase tracking-widest px-3 py-1.5 rounded transition-all text-gray-400 hover:text-cyber-300 hover:bg-cyber-500/5" style="border: 1px solid rgba(34,211,238,0.1)">↗ NEW TAB</a>
   </div>
 </div>
 
-<div class="rounded-2xl overflow-hidden border border-white/10 bg-black animate-fade-up delay-1" style="height: calc(100vh - 130px)">
+<div class="panel overflow-hidden animate-fade-up delay-1" style="height: calc(100vh - 130px); background:#000">
+  <span class="corner-tr"></span><span class="corner-bl"></span>
   <iframe id="term-frame" src="about:blank" class="w-full h-full border-0" title="Web Terminal"></iframe>
   <div id="term-fallback" class="flex flex-col items-center justify-center h-full text-center p-8">
-    <div class="w-16 h-16 rounded-2xl bg-red-500/20 flex items-center justify-center mb-4">
-      <svg class="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+    <div class="w-12 h-12 rounded bg-red-500/10 border border-red-500/30 flex items-center justify-center mb-4">
+      <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
     </div>
-    <p class="text-white font-semibold mb-2">Terminal ikke tilgængelig</p>
-    <p class="text-xs text-gray-500">Web-terminalen ser ikke ud til at køre på port <span id="term-port-label" class="font-mono">7862</span>.</p>
-    <p class="text-xs text-gray-500 mt-1">Tjek at <code class="text-gray-300 font-mono">~/Documents/web-terminal/app.py</code> kører.</p>
+    <p class="text-white font-mono text-sm font-bold tracking-widest mb-2">TERMINAL UNAVAILABLE</p>
+    <p class="text-[11px] font-mono text-gray-500">No service on port <span id="term-port-label" class="text-cyber-300">7862</span>.</p>
+    <p class="text-[11px] font-mono text-gray-500 mt-1">Check <code class="text-cyber-300">~/Documents/web-terminal/app.py</code></p>
   </div>
 </div>
 
@@ -39,23 +39,15 @@
 {% block scripts %}
 <script>
   const TERM_PORT = {{ config.terminal_port|default(7862) }};
-  function termUrl() {
-    return `${location.protocol}//${location.hostname}:${TERM_PORT}/`;
-  }
-  function reloadTerm() {
-    document.getElementById('term-frame').src = termUrl() + '?t=' + Date.now();
-  }
+  function termUrl() { return `${location.protocol}//${location.hostname}:${TERM_PORT}/`; }
+  function reloadTerm() { document.getElementById('term-frame').src = termUrl() + '?t=' + Date.now(); }
   document.getElementById('term-port-label').textContent = TERM_PORT;
-  document.getElementById('term-target').textContent = termUrl();
+  document.getElementById('term-target').textContent = '▸ ' + termUrl();
   document.getElementById('term-newtab').href = termUrl();
   document.getElementById('term-frame').src = termUrl();
-
-  // Detect load failure (ish — onerror/iframe is unreliable cross-origin)
-  // Vi prober porten med en HEAD-agtig fetch (no-cors): hvis den fejler helt → fallback
-  fetch(termUrl(), {mode: 'no-cors', cache: 'no-store'})
-    .catch(() => {
-      document.getElementById('term-frame').style.display = 'none';
-      document.getElementById('term-fallback').style.display = 'flex';
-    });
+  fetch(termUrl(), {mode: 'no-cors', cache: 'no-store'}).catch(() => {
+    document.getElementById('term-frame').style.display = 'none';
+    document.getElementById('term-fallback').style.display = 'flex';
+  });
 </script>
 {% endblock %}

@@ -480,6 +480,30 @@ def _collect_system_info() -> dict:
     cpu_cores = _run("nproc")
     load_avg = _run("cat /proc/loadavg").split()[:3]
 
+    # CPU frekvenser per core
+    cpu_freqs_mhz = []
+    cpu_freq_max_mhz = 0
+    cpu_governor = ""
+    cpu_driver = ""
+    for c_idx in range(len(per_core)):
+        try:
+            freq_khz = int(Path(f"/sys/devices/system/cpu/cpu{c_idx}/cpufreq/scaling_cur_freq").read_text().strip())
+            cpu_freqs_mhz.append(round(freq_khz / 1000))
+        except Exception:
+            cpu_freqs_mhz.append(None)
+    try:
+        cpu_freq_max_mhz = int(Path("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read_text().strip()) // 1000
+    except Exception:
+        pass
+    try:
+        cpu_governor = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor").read_text().strip()
+    except Exception:
+        pass
+    try:
+        cpu_driver = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver").read_text().strip()
+    except Exception:
+        pass
+
     # --- Memory ---
     mem = {}
     for line in _run("cat /proc/meminfo").splitlines():
@@ -663,6 +687,37 @@ def _collect_system_info() -> dict:
     # --- NVMe info ---
     nvme_devices = _collect_nvme_info()
 
+    # --- System health ---
+    proc_total = _safe_int(_run("ps -e --no-headers | wc -l")) or 0
+    thread_total = _safe_int(_run("ps -eL --no-headers | wc -l")) or 0
+    zombie_count = _safe_int(_run("ps -e -o stat --no-headers | grep -c '^Z'")) or 0
+    failed_units_raw = _run("systemctl list-units --state=failed --no-legend --no-pager | wc -l")
+    failed_units = _safe_int(failed_units_raw) or 0
+    journal_err_count = _safe_int(_run("journalctl -p err -S '1 hour ago' --no-pager 2>/dev/null | wc -l")) or 0
+
+    # Network connections
+    tcp_est = _safe_int(_run("ss -tn state established 2>/dev/null | tail -n +2 | wc -l")) or 0
+    tcp_listen = _safe_int(_run("ss -tln 2>/dev/null | tail -n +2 | wc -l")) or 0
+    udp_listen = _safe_int(_run("ss -uln 2>/dev/null | tail -n +2 | wc -l")) or 0
+
+    # Logged-in users (raw who output, first 5 lines)
+    who_lines = [line for line in _run("who").splitlines()[:5] if line]
+
+    # Kernel memory bits (kB)
+    slab_kb = mem.get("Slab", 0)
+    kernel_stack_kb = mem.get("KernelStack", 0)
+    page_tables_kb = mem.get("PageTables", 0)
+    dirty_kb = mem.get("Dirty", 0)
+    writeback_kb = mem.get("Writeback", 0)
+    cached_kb = mem.get("Cached", 0)
+    buffers_kb = mem.get("Buffers", 0)
+
+    # Pending apt updates (uden sudo: cached fra apt-check eller wc i lists)
+    pending_updates = _safe_int(
+        _run("/usr/lib/update-notifier/apt-check 2>&1 | cut -d';' -f1")
+    )
+    reboot_required = Path("/var/run/reboot-required").exists()
+
     return {
         "hostname": hostname,
         "os": os_info,
@@ -675,6 +730,10 @@ def _collect_system_info() -> dict:
             "cores": int(cpu_cores) if cpu_cores else 0,
             "usage_pct": cpu_total,
             "per_core": per_core,
+            "per_core_mhz": cpu_freqs_mhz,
+            "freq_max_mhz": cpu_freq_max_mhz,
+            "governor": cpu_governor,
+            "driver": cpu_driver,
             "load_avg": load_avg,
         },
         "memory": {
@@ -684,6 +743,26 @@ def _collect_system_info() -> dict:
             "usage_pct": round(mem_used_gb / mem_total_gb * 100, 1) if mem_total_gb > 0 else 0,
             "swap_total_gb": swap_total_gb,
             "swap_used_gb": swap_used_gb,
+            "cached_gb": round(cached_kb / 1048576, 1),
+            "buffers_gb": round(buffers_kb / 1048576, 1),
+            "slab_gb": round(slab_kb / 1048576, 2),
+            "kernel_stack_mb": round(kernel_stack_kb / 1024, 1),
+            "page_tables_mb": round(page_tables_kb / 1024, 1),
+            "dirty_mb": round(dirty_kb / 1024, 2),
+            "writeback_mb": round(writeback_kb / 1024, 2),
+        },
+        "health": {
+            "processes": proc_total,
+            "threads": thread_total,
+            "zombies": zombie_count,
+            "failed_units": failed_units,
+            "journal_errors_1h": journal_err_count,
+            "tcp_established": tcp_est,
+            "tcp_listen": tcp_listen,
+            "udp_listen": udp_listen,
+            "who": who_lines,
+            "pending_updates": pending_updates,
+            "reboot_required": reboot_required,
         },
         "gpu": gpu,
         "temperatures": temps,

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Spark Hub{% endblock %}</title>
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#0ea5e9">
+  <meta name="theme-color" content="#0a0a0e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Spark Hub">
@@ -16,106 +16,244 @@
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: { sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'] },
+          colors: {
+            cyber: { 50:'#ecfeff', 300:'#67e8f9', 400:'#22d3ee', 500:'#06b6d4', 600:'#0891b2' },
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'system-ui', 'sans-serif'],
+          }
         }
       }
     }
   </script>
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Inter', sans-serif;
-      background: #09090b;
-      background-image:
-        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(14,165,233,0.08), transparent),
-        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(99,102,241,0.05), transparent);
+    :root {
+      --bg: #07070b;
+      --bg-soft: #0e0e14;
+      --line: rgba(34, 211, 238, 0.08);
+      --line-strong: rgba(34, 211, 238, 0.18);
+      --cyan: #22d3ee;
+      --cyan-dim: rgba(34, 211, 238, 0.45);
+      --amber: #f59e0b;
+      --lime: #a3e635;
+      --magenta: #ec4899;
+      --emerald: #10b981;
+      --red: #ef4444;
+      --text: #e5e7eb;
+      --text-dim: #9ca3af;
+      --text-faint: #4b5563;
     }
-    .glass {
-      background: rgba(255,255,255,0.03);
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background-image:
+        linear-gradient(rgba(34,211,238,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34,211,238,0.025) 1px, transparent 1px),
+        radial-gradient(ellipse 100% 70% at 50% -10%, rgba(34,211,238,0.06), transparent 60%),
+        radial-gradient(ellipse 80% 50% at 100% 100%, rgba(236,72,153,0.04), transparent 60%);
+      background-size: 24px 24px, 24px 24px, 100% 100%, 100% 100%;
+      background-attachment: fixed;
+    }
+
+    /* ─── Cards med corner-marks ─── */
+    .panel {
+      position: relative;
+      background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.005));
+      border: 1px solid var(--line);
+      border-radius: 4px;
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.06);
     }
-    .glass-hover:hover {
-      background: rgba(255,255,255,0.06);
-      border-color: rgba(255,255,255,0.1);
+    .panel::before, .panel::after,
+    .panel > .corner-tr, .panel > .corner-bl {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-color: var(--cyan-dim);
+      pointer-events: none;
     }
-    .glow-sm { box-shadow: 0 0 20px -5px rgba(14,165,233,0.15); }
-    .glow-hover:hover { box-shadow: 0 0 30px -5px rgba(14,165,233,0.25); }
-    .card-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
-    .card-lift:hover { transform: translateY(-2px); }
-    .status-pulse { animation: pulse-glow 2s ease-in-out infinite; }
-    @keyframes pulse-glow { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    .panel::before { top: -1px; left: -1px; border-top: 1px solid; border-left: 1px solid; }
+    .panel::after { bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid; }
+    .panel > .corner-tr { top: -1px; right: -1px; border-top: 1px solid; border-right: 1px solid; }
+    .panel > .corner-bl { bottom: -1px; left: -1px; border-bottom: 1px solid; border-left: 1px solid; }
+    .panel:hover { border-color: var(--line-strong); }
+    .panel-flat {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+    .panel-flat:hover { border-color: var(--line-strong); }
+
+    /* ─── Section header ─── */
+    .section-h {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--text-dim);
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .section-h::before, .section-h::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--line) 20%, var(--line) 80%, transparent);
+    }
+    .section-h .h-mark {
+      color: var(--cyan);
+      font-weight: 700;
+    }
+
+    /* ─── Status pulse ─── */
+    .pulse-dot {
+      animation: pulse 2s ease-in-out infinite;
+      box-shadow: 0 0 6px currentColor;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ─── Scanline-effekt på live ─── */
+    .live::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent, transparent 50%, rgba(34,211,238,0.04) 50%);
+      background-size: 100% 4px;
+      pointer-events: none;
+      opacity: 0.5;
+      border-radius: inherit;
+    }
+
+    /* ─── Tabular numbers ─── */
+    .num {
+      font-feature-settings: 'tnum', 'zero';
+      font-variant-numeric: tabular-nums slashed-zero;
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    }
+
+    /* ─── Fade-in ─── */
     @keyframes fade-up {
-      from { opacity: 0; transform: translateY(12px); }
+      from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
     .animate-fade-up { animation: fade-up 0.4s ease-out both; }
-    .delay-1 { animation-delay: 0.05s; }
-    .delay-2 { animation-delay: 0.1s; }
-    .delay-3 { animation-delay: 0.15s; }
-    .delay-4 { animation-delay: 0.2s; }
+    .delay-1 { animation-delay: 0.04s; }
+    .delay-2 { animation-delay: 0.08s; }
+    .delay-3 { animation-delay: 0.12s; }
+    .delay-4 { animation-delay: 0.16s; }
+    .delay-5 { animation-delay: 0.20s; }
+
+    /* ─── Nav ─── */
     .nav-blur {
-      background: rgba(9,9,11,0.7);
+      background: rgba(7,7,11,0.85);
       backdrop-filter: saturate(180%) blur(16px);
       -webkit-backdrop-filter: saturate(180%) blur(16px);
+      border-bottom: 1px solid var(--line);
     }
-    .nav-link { @apply px-3 py-1.5 text-xs font-medium rounded-lg transition-all; }
+    .nav-link {
+      position: relative;
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 500;
+      padding: 6px 12px;
+      color: var(--text-dim);
+      border-radius: 3px;
+      transition: all 0.15s ease;
+    }
+    .nav-link:hover { color: var(--cyan); background: rgba(34,211,238,0.05); }
+    .nav-link.active { color: var(--cyan); }
+    .nav-link.active::after {
+      content: '';
+      position: absolute;
+      bottom: -10px; left: 12px; right: 12px;
+      height: 1px;
+      background: var(--cyan);
+      box-shadow: 0 0 6px var(--cyan);
+    }
+
+    /* ─── Sparkline ─── */
+    .spark {
+      filter: drop-shadow(0 0 3px currentColor);
+    }
+
+    /* ─── Heat cell transitions ─── */
+    .heat-cell { transition: background 0.4s ease, border-color 0.4s ease; }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.15); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.3); }
   </style>
   {% block head %}{% endblock %}
 </head>
-<body class="h-full text-white antialiased">
+<body class="h-full antialiased">
 
 {% block nav %}
-<nav class="nav-blur border-b border-white/5 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
-  <a href="/dashboard" class="flex items-center gap-2.5 font-semibold text-base hover:text-sky-400 transition-colors group">
-    <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center group-hover:shadow-lg group-hover:shadow-sky-500/20 transition-shadow">
+<nav class="nav-blur px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+  <a href="/dashboard" class="flex items-center gap-2.5 group">
+    <div class="relative w-7 h-7 flex items-center justify-center" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); clip-path: polygon(15% 0, 100% 0, 85% 100%, 0% 100%);">
       <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
       </svg>
     </div>
-    <span id="nav-server-name">Spark Hub</span>
+    <span class="font-mono text-sm font-semibold tracking-wide group-hover:text-cyan-300 transition-colors">
+      <span class="text-cyber-400">▮</span> <span id="nav-server-name">SPARK-HUB</span>
+    </span>
   </a>
   <div class="flex items-center gap-1">
-    <a href="/dashboard" class="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all hidden sm:block">
-      Dashboard
-    </a>
-    <a href="/system" class="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all hidden sm:block">
-      System
-    </a>
-    <a href="/terminal" class="px-3 py-1.5 text-xs font-medium text-sky-400 hover:text-sky-300 hover:bg-sky-400/10 rounded-lg transition-all hidden sm:block">
-      Terminal
-    </a>
-    <a href="/settings" class="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-400 hover:text-white" title="Indstillinger">
+    <a href="/dashboard" class="nav-link hidden sm:block" id="nav-dash">DASHBOARD</a>
+    <a href="/system" class="nav-link hidden sm:block" id="nav-sys">SYSTEM</a>
+    <a href="/terminal" class="nav-link hidden sm:block" id="nav-term">TERMINAL</a>
+    <a href="/settings" class="nav-link p-2" title="Settings">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
           d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
     </a>
-    <button onclick="document.getElementById('mobile-menu').classList.toggle('hidden')" class="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-400 sm:hidden">
+    <button onclick="document.getElementById('mobile-menu').classList.toggle('hidden')" class="nav-link p-2 sm:hidden">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
       </svg>
     </button>
   </div>
 </nav>
-<div id="mobile-menu" class="hidden sm:hidden nav-blur border-b border-white/5 px-4 py-2 flex flex-col gap-1">
-  <a href="/dashboard" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">Dashboard</a>
-  <a href="/system" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">System</a>
-  <a href="/terminal" class="px-3 py-2 text-sm text-sky-400 hover:bg-sky-400/10 rounded-lg transition-all">Terminal</a>
-  <a href="/settings" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">Indstillinger</a>
+<div id="mobile-menu" class="hidden sm:hidden nav-blur px-4 py-2 flex flex-col gap-1">
+  <a href="/dashboard" class="nav-link">DASHBOARD</a>
+  <a href="/system" class="nav-link">SYSTEM</a>
+  <a href="/terminal" class="nav-link">TERMINAL</a>
+  <a href="/settings" class="nav-link">SETTINGS</a>
 </div>
 {% endblock %}
 
-<main class="{% block main_class %}max-w-7xl mx-auto px-4 sm:px-6 py-8{% endblock %}">
+<main class="{% block main_class %}max-w-7xl mx-auto px-4 sm:px-6 py-6{% endblock %}">
   {% block content %}{% endblock %}
 </main>
 
 <script>
   fetch('/api/config').then(r=>r.json()).then(cfg=>{
     const el = document.getElementById('nav-server-name');
-    if(el && cfg.server_name) el.textContent = cfg.server_name;
+    if(el && cfg.server_name) el.textContent = cfg.server_name.toUpperCase();
   }).catch(()=>{});
+  // Active nav link
+  const p = location.pathname;
+  if (p === '/dashboard') document.getElementById('nav-dash')?.classList.add('active');
+  else if (p === '/system') document.getElementById('nav-sys')?.classList.add('active');
+  else if (p === '/terminal') document.getElementById('nav-term')?.classList.add('active');
 </script>
 {% block scripts %}{% endblock %}
 <script>

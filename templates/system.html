@@ -1,202 +1,264 @@
 {% extends "base.html" %}
-{% block title %}System — Spark Hub{% endblock %}
+{% block title %}SYSTEM :: {{ config.server_name }}{% endblock %}
 
 {% block head %}
 <style>
-  .stat-row:nth-child(even) { background: rgba(255,255,255,0.02); }
-  .core-cell { transition: background-color 0.5s ease, border-color 0.5s ease; }
+  .core-cell {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(34,211,238,0.1);
+    border-radius: 3px;
+    padding: 6px 4px;
+    text-align: center;
+    transition: background 0.4s, border-color 0.4s;
+  }
+  .row-alt:nth-child(even) { background: rgba(255,255,255,0.015); }
+  .btn-tech {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 3px;
+    background: rgba(34,211,238,0.08);
+    border: 1px solid rgba(34,211,238,0.2);
+    color: var(--cyan);
+    transition: all 0.15s ease;
+  }
+  .btn-tech:hover { background: rgba(34,211,238,0.18); border-color: rgba(34,211,238,0.4); }
+  .led {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    box-shadow: 0 0 6px currentColor;
+    display: inline-block;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 
-<div class="mb-6 flex items-center gap-3 animate-fade-up">
-  <a href="/dashboard" class="text-gray-500 hover:text-white transition-colors text-xs font-medium">&larr; Dashboard</a>
-  <span class="text-gray-800">/</span>
-  <h1 class="text-lg font-semibold">System Status</h1>
-  <div class="ml-auto flex items-center gap-2">
-    <span id="last-updated" class="text-[10px] text-gray-600"></span>
-    <button onclick="refresh()" class="text-xs glass glass-hover px-3 py-1.5 rounded-lg transition-all font-medium text-gray-400 hover:text-white">
-      Opdater
-    </button>
+<!-- ═══════════════ HEADER ═══════════════ -->
+<div class="mb-5 flex items-center gap-3 animate-fade-up">
+  <a href="/dashboard" class="font-mono text-[10px] text-gray-500 hover:text-cyber-300 transition-colors tracking-widest uppercase">← DASHBOARD</a>
+  <span class="text-gray-700 font-mono">/</span>
+  <h1 class="font-mono text-sm font-bold tracking-widest uppercase text-white">SYSTEM</h1>
+  <div class="ml-auto flex items-center gap-3">
+    <span class="text-[10px] font-mono text-gray-600 tracking-wider" id="last-updated">--</span>
+    <button onclick="refresh()" class="btn-tech">REFRESH</button>
   </div>
 </div>
 
-<!-- System header -->
-<div class="glass rounded-2xl p-5 mb-6 animate-fade-up delay-1">
-  <div class="flex flex-wrap items-center gap-x-8 gap-y-3 text-sm">
+<!-- ═══════════════ SYSTEM INFO BAR ═══════════════ -->
+<div class="panel p-4 mb-5 animate-fade-up delay-1"><span class="corner-tr"></span><span class="corner-bl"></span>
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-2 text-xs">
     <div>
-      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Hostname</span>
-      <p class="text-white font-mono text-sm" id="s-hostname">---</p>
+      <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-0.5">Hostname</p>
+      <p class="text-white font-mono text-xs" id="s-hostname">--</p>
     </div>
     <div>
-      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">OS</span>
-      <p class="text-white text-sm" id="s-os">---</p>
+      <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-0.5">OS</p>
+      <p class="text-white font-mono text-xs truncate" id="s-os">--</p>
     </div>
     <div>
-      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Kernel</span>
-      <p class="text-white font-mono text-sm" id="s-kernel">---</p>
+      <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-0.5">Kernel</p>
+      <p class="text-white font-mono text-xs" id="s-kernel">--</p>
     </div>
     <div>
-      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Arch</span>
-      <p class="text-white font-mono text-sm" id="s-arch">---</p>
+      <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-0.5">Arch</p>
+      <p class="text-white font-mono text-xs" id="s-arch">--</p>
     </div>
     <div>
-      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Uptime</span>
-      <p class="text-white text-sm" id="s-uptime">---</p>
+      <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-0.5">Uptime</p>
+      <p class="text-white font-mono text-xs" id="s-uptime">--</p>
     </div>
     <div>
-      <span class="text-[10px] text-gray-600 uppercase tracking-wider font-medium">Siden</span>
-      <p class="text-white text-sm font-mono" id="s-uptime-since">---</p>
+      <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-0.5">Since</p>
+      <p class="text-white font-mono text-xs" id="s-uptime-since">--</p>
     </div>
   </div>
 </div>
 
-<!-- Top gauges -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 animate-fade-up delay-2">
-  <div class="glass rounded-2xl p-5">
-    <div class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-2">CPU total</div>
-    <div class="text-4xl font-bold text-white tabular-nums mb-1" id="g-cpu">--%</div>
-    <div class="text-[10px] text-gray-500"><span id="g-cpu-cores">--</span> cores · load <span class="text-gray-300 font-mono" id="g-cpu-load">--</span></div>
-    <div class="mt-3 w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div id="g-cpu-bar" class="h-full bg-blue-500 transition-all duration-700" style="width:0%"></div></div>
+<!-- ═══════════════ 4 BIG GAUGES ═══════════════ -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 animate-fade-up delay-2">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-2">▮ CPU TOTAL</p>
+    <p class="num text-4xl font-bold text-cyber-300 mb-1" id="g-cpu">--<span class="text-base text-gray-600">%</span></p>
+    <p class="text-[9px] text-gray-600 font-mono"><span id="g-cpu-cores">--</span> cores · load <span class="text-gray-400" id="g-cpu-load">--</span></p>
+    <div class="mt-2 w-full h-1 rounded-full overflow-hidden" style="background:rgba(34,211,238,0.08)"><div id="g-cpu-bar" class="h-full transition-all duration-500" style="background:var(--cyan); width:0%; box-shadow: 0 0 8px var(--cyan)"></div></div>
   </div>
-  <div class="glass rounded-2xl p-5">
-    <div class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-2">RAM</div>
-    <div class="text-4xl font-bold text-white tabular-nums mb-1" id="g-mem">--%</div>
-    <div class="text-[10px] text-gray-500"><span id="g-mem-used">--</span> / <span id="g-mem-tot">--</span> GB · swap <span class="text-gray-300 font-mono" id="g-mem-swap">--</span></div>
-    <div class="mt-3 w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div id="g-mem-bar" class="h-full bg-green-500 transition-all duration-700" style="width:0%"></div></div>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-2">▮ MEMORY</p>
+    <p class="num text-4xl font-bold text-emerald-300 mb-1" id="g-mem">--<span class="text-base text-gray-600">%</span></p>
+    <p class="text-[9px] text-gray-600 font-mono"><span id="g-mem-used">--</span>/<span id="g-mem-tot">--</span> GB · swap <span class="text-gray-400" id="g-mem-swap">--</span></p>
+    <div class="mt-2 w-full h-1 rounded-full overflow-hidden" style="background:rgba(16,185,129,0.08)"><div id="g-mem-bar" class="h-full transition-all duration-500" style="background:var(--emerald); width:0%; box-shadow: 0 0 8px var(--emerald)"></div></div>
   </div>
-  <div class="glass rounded-2xl p-5">
-    <div class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-2">GPU</div>
-    <div class="text-4xl font-bold text-white tabular-nums mb-1" id="g-gpu">--°</div>
-    <div class="text-[10px] text-gray-500"><span id="g-gpu-util">--%</span> util · <span id="g-gpu-power">--</span> W</div>
-    <div class="mt-3 w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div id="g-gpu-bar" class="h-full bg-amber-500 transition-all duration-700" style="width:0%"></div></div>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-2">▮ GPU TEMP</p>
+    <p class="num text-4xl font-bold text-amber-300 mb-1" id="g-gpu">--<span class="text-base text-gray-600">°C</span></p>
+    <p class="text-[9px] text-gray-600 font-mono"><span class="text-gray-400" id="g-gpu-util">--%</span> util · <span class="text-gray-400" id="g-gpu-power">--</span> W</p>
+    <div class="mt-2 w-full h-1 rounded-full overflow-hidden" style="background:rgba(245,158,11,0.08)"><div id="g-gpu-bar" class="h-full transition-all duration-500" style="background:var(--amber); width:0%; box-shadow: 0 0 8px var(--amber)"></div></div>
   </div>
-  <div class="glass rounded-2xl p-5">
-    <div class="text-[10px] text-gray-500 uppercase tracking-widest font-semibold mb-2">Disk /</div>
-    <div class="text-4xl font-bold text-white tabular-nums mb-1" id="g-disk">--%</div>
-    <div class="text-[10px] text-gray-500"><span id="g-disk-used">--</span> / <span id="g-disk-tot">--</span></div>
-    <div class="mt-3 w-full h-1.5 bg-white/5 rounded-full overflow-hidden"><div id="g-disk-bar" class="h-full bg-purple-500 transition-all duration-700" style="width:0%"></div></div>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-2">▮ DISK /</p>
+    <p class="num text-4xl font-bold text-pink-300 mb-1" id="g-disk">--<span class="text-base text-gray-600">%</span></p>
+    <p class="text-[9px] text-gray-600 font-mono"><span id="g-disk-used">--</span>/<span id="g-disk-tot">--</span></p>
+    <div class="mt-2 w-full h-1 rounded-full overflow-hidden" style="background:rgba(236,72,153,0.08)"><div id="g-disk-bar" class="h-full transition-all duration-500" style="background:var(--magenta); width:0%; box-shadow: 0 0 8px var(--magenta)"></div></div>
   </div>
 </div>
 
-<!-- CPU per-core + GPU details -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 animate-fade-up delay-3">
-  <div class="glass rounded-2xl p-5">
+<!-- ═══════════════ PER-CORE + GPU DETAIL ═══════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5 animate-fade-up delay-3">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
     <div class="flex items-center justify-between mb-3">
-      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Per-core CPU</h2>
-      <span class="text-[10px] text-gray-600 font-mono truncate max-w-[60%]" id="s-cpu-model">--</span>
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono">▮ CPU PER-CORE</p>
+      <p class="text-[9px] text-gray-600 font-mono">
+        <span class="text-cyber-400" id="s-cpu-gov">--</span> ·
+        <span id="s-cpu-driver">--</span> ·
+        <span id="s-cpu-fmax">--</span> MHz max
+      </p>
     </div>
+    <p class="text-[9px] text-gray-700 font-mono mb-3 truncate" id="s-cpu-model">--</p>
     <div id="cores-grid" class="grid grid-cols-5 sm:grid-cols-10 gap-1.5"></div>
   </div>
 
-  <div class="glass rounded-2xl p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">GPU detalje</h2>
-    <p class="text-sm font-semibold text-white mb-3" id="s-gpu-name">---</p>
-    <div class="space-y-3 text-xs">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <div class="flex items-center justify-between mb-3">
+      <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono">▮ GPU DETAIL</p>
+      <p class="text-[9px] text-gray-600 font-mono"><span class="text-cyber-400" id="s-gpu-pstate">P--</span></p>
+    </div>
+    <p class="text-sm font-mono font-bold text-white mb-1" id="s-gpu-name">--</p>
+    <div id="s-gpu-throttle" class="hidden text-[10px] font-mono text-amber-400 mb-2"></div>
+    <div class="space-y-2 text-xs">
       <div>
-        <div class="flex justify-between mb-1"><span class="text-gray-400">VRAM</span><span class="text-white font-mono" id="s-gpu-vram">--</span></div>
-        <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden"><div id="s-gpu-vram-bar" class="h-full bg-gradient-to-r from-amber-400 to-rose-500 transition-all duration-500" style="width:0%"></div></div>
+        <div class="flex justify-between text-[10px] font-mono mb-1"><span class="text-gray-500">VRAM</span><span class="text-white" id="s-gpu-vram">--</span></div>
+        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background:rgba(245,158,11,0.08)"><div id="s-gpu-vram-bar" class="h-full transition-all duration-500" style="background:linear-gradient(90deg,#f59e0b,#ec4899); width:0%"></div></div>
       </div>
       <div>
-        <div class="flex justify-between mb-1"><span class="text-gray-400">Utilization GPU</span><span class="text-white font-mono" id="s-gpu-util">--</span></div>
-        <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden"><div id="s-gpu-util-bar" class="h-full bg-gradient-to-r from-sky-400 to-indigo-500 transition-all duration-500" style="width:0%"></div></div>
+        <div class="flex justify-between text-[10px] font-mono mb-1"><span class="text-gray-500">UTIL GPU</span><span class="text-white" id="s-gpu-util">--</span></div>
+        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background:rgba(34,211,238,0.08)"><div id="s-gpu-util-bar" class="h-full transition-all duration-500" style="background:var(--cyan); width:0%; box-shadow:0 0 6px var(--cyan)"></div></div>
       </div>
       <div>
-        <div class="flex justify-between mb-1"><span class="text-gray-400">Memory bandwidth util</span><span class="text-white font-mono" id="s-gpu-mutil">--</span></div>
-        <div class="w-full h-2 bg-white/5 rounded-full overflow-hidden"><div id="s-gpu-mutil-bar" class="h-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-500" style="width:0%"></div></div>
+        <div class="flex justify-between text-[10px] font-mono mb-1"><span class="text-gray-500">UTIL MEM</span><span class="text-white" id="s-gpu-mutil">--</span></div>
+        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background:rgba(16,185,129,0.08)"><div id="s-gpu-mutil-bar" class="h-full transition-all duration-500" style="background:var(--emerald); width:0%; box-shadow:0 0 6px var(--emerald)"></div></div>
       </div>
-      <div class="grid grid-cols-4 gap-2 pt-2 border-t border-white/5">
-        <div><p class="text-[10px] text-gray-600 uppercase">Power</p><p class="text-white font-mono text-xs" id="s-gpu-pwr">--</p></div>
-        <div><p class="text-[10px] text-gray-600 uppercase">Driver</p><p class="text-white font-mono text-xs" id="s-gpu-drv">--</p></div>
-        <div><p class="text-[10px] text-gray-600 uppercase">Core clk</p><p class="text-white font-mono text-xs" id="s-gpu-clk-gr">--</p></div>
-        <div><p class="text-[10px] text-gray-600 uppercase">Mem clk</p><p class="text-white font-mono text-xs" id="s-gpu-clk-mem">--</p></div>
+      <div class="grid grid-cols-4 gap-2 pt-2" style="border-top: 1px solid var(--line)">
+        <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">PWR</p><p class="text-white font-mono text-xs" id="s-gpu-pwr">--</p></div>
+        <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">DRV</p><p class="text-white font-mono text-xs" id="s-gpu-drv">--</p></div>
+        <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">CORE</p><p class="text-white font-mono text-xs" id="s-gpu-clk-gr">--</p></div>
+        <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">MEM</p><p class="text-white font-mono text-xs" id="s-gpu-clk-mem">--</p></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- GPU processer + NVMe info -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 animate-fade-up delay-3">
-  <div class="glass rounded-2xl p-5">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">GPU processer</h2>
-      <span class="text-[10px] text-gray-600 font-mono" id="s-gpu-pstate">--</span>
+<!-- ═══════════════ MEMORY BREAKDOWN + SYSTEM HEALTH ═══════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5 animate-fade-up delay-3">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ MEMORY BREAKDOWN</p>
+    <div class="grid grid-cols-3 gap-3 text-center">
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">CACHED</p><p class="num text-lg text-emerald-300 font-bold mt-1" id="m-cached">--</p><p class="text-[9px] text-gray-700 font-mono">GB</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">BUFFERS</p><p class="num text-lg text-cyber-300 font-bold mt-1" id="m-buf">--</p><p class="text-[9px] text-gray-700 font-mono">GB</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">SLAB</p><p class="num text-lg text-amber-300 font-bold mt-1" id="m-slab">--</p><p class="text-[9px] text-gray-700 font-mono">GB</p></div>
     </div>
-    <div id="s-gpu-throttle" class="hidden mb-2 text-[10px] text-amber-400 font-medium"></div>
-    <div class="grid grid-cols-12 gap-2 text-[9px] text-gray-600 uppercase tracking-wider font-medium pb-2 border-b border-white/5 mb-1">
-      <span class="col-span-2">PID</span>
-      <span class="col-span-1">Type</span>
-      <span class="col-span-5">Command</span>
-      <span class="col-span-2 text-right">SM%</span>
-      <span class="col-span-2 text-right">Mem%</span>
+    <div class="grid grid-cols-4 gap-3 mt-4 pt-3 text-center" style="border-top: 1px solid var(--line)">
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">K-STACK</p><p class="num text-sm text-gray-300 font-bold mt-0.5" id="m-kstack">--</p><p class="text-[9px] text-gray-700 font-mono">MB</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">PG-TABLES</p><p class="num text-sm text-gray-300 font-bold mt-0.5" id="m-ptables">--</p><p class="text-[9px] text-gray-700 font-mono">MB</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">DIRTY</p><p class="num text-sm text-gray-300 font-bold mt-0.5" id="m-dirty">--</p><p class="text-[9px] text-gray-700 font-mono">MB</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">WRITEBACK</p><p class="num text-sm text-gray-300 font-bold mt-0.5" id="m-wb">--</p><p class="text-[9px] text-gray-700 font-mono">MB</p></div>
     </div>
-    <div id="s-gpu-procs" class="text-[11px]"></div>
   </div>
 
-  <div class="glass rounded-2xl p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">NVMe diske</h2>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ SYSTEM HEALTH</p>
+    <div class="grid grid-cols-3 gap-3 text-center mb-3">
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">PROCESSES</p><p class="num text-lg text-cyber-300 font-bold mt-1" id="h-procs">--</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">THREADS</p><p class="num text-lg text-cyber-300 font-bold mt-1" id="h-threads">--</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">ZOMBIES</p><p class="num text-lg font-bold mt-1" id="h-zombies">--</p></div>
+    </div>
+    <div class="grid grid-cols-3 gap-3 text-center mb-3 pt-3" style="border-top: 1px solid var(--line)">
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">TCP est</p><p class="num text-lg text-emerald-300 font-bold mt-1" id="h-tcp">--</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">TCP listen</p><p class="num text-lg text-gray-300 font-bold mt-1" id="h-tcpl">--</p></div>
+      <div><p class="text-[8px] text-gray-600 uppercase font-mono tracking-wider">UDP listen</p><p class="num text-lg text-gray-300 font-bold mt-1" id="h-udp">--</p></div>
+    </div>
+    <div class="pt-3" style="border-top: 1px solid var(--line)">
+      <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-2">Active sessions</p>
+      <div id="h-who" class="text-[10px] font-mono text-gray-400 space-y-0.5"></div>
+    </div>
+    <div id="h-reboot" class="hidden mt-3 pt-3 text-[10px] font-mono text-amber-400" style="border-top: 1px solid var(--line)">⚠ REBOOT REQUIRED</div>
+  </div>
+</div>
+
+<!-- ═══════════════ GPU PROCS + NVMe ═══════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5 animate-fade-up delay-3">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ GPU PROCESSES</p>
+    <div class="grid grid-cols-12 gap-2 text-[8px] font-mono text-gray-600 uppercase tracking-widest pb-1 mb-1" style="border-bottom: 1px solid var(--line)">
+      <span class="col-span-2">PID</span>
+      <span class="col-span-1">T</span>
+      <span class="col-span-5">CMD</span>
+      <span class="col-span-2 text-right">SM%</span>
+      <span class="col-span-2 text-right">MEM%</span>
+    </div>
+    <div id="s-gpu-procs" class="text-[10.5px]"></div>
+  </div>
+
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ NVMe STORAGE</p>
     <div id="s-nvme" class="space-y-3 text-xs"></div>
   </div>
 </div>
 
-<!-- Top processer -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 animate-fade-up delay-3">
-  <div class="glass rounded-2xl p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Top 10 — CPU</h2>
-    <div class="text-[11px]">
-      <div class="grid grid-cols-12 gap-2 text-[9px] text-gray-600 uppercase tracking-wider font-medium pb-2 border-b border-white/5 mb-1">
-        <span class="col-span-1">PID</span>
-        <span class="col-span-2">User</span>
-        <span class="col-span-5">Command</span>
-        <span class="col-span-2 text-right">CPU%</span>
-        <span class="col-span-2 text-right">MEM%</span>
-      </div>
-      <div id="top-cpu" class="space-y-0 divide-y divide-white/5"></div>
+<!-- ═══════════════ TOP PROCESSES ═══════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5 animate-fade-up delay-4">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ TOP 10 — CPU</p>
+    <div class="grid grid-cols-12 gap-2 text-[8px] font-mono text-gray-600 uppercase tracking-widest pb-1 mb-1" style="border-bottom: 1px solid var(--line)">
+      <span class="col-span-1">PID</span>
+      <span class="col-span-2">USER</span>
+      <span class="col-span-5">CMD</span>
+      <span class="col-span-2 text-right">CPU%</span>
+      <span class="col-span-2 text-right">MEM%</span>
     </div>
+    <div id="top-cpu" class="text-[10.5px]"></div>
   </div>
-  <div class="glass rounded-2xl p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Top 10 — Memory</h2>
-    <div class="text-[11px]">
-      <div class="grid grid-cols-12 gap-2 text-[9px] text-gray-600 uppercase tracking-wider font-medium pb-2 border-b border-white/5 mb-1">
-        <span class="col-span-1">PID</span>
-        <span class="col-span-2">User</span>
-        <span class="col-span-5">Command</span>
-        <span class="col-span-2 text-right">RSS</span>
-        <span class="col-span-2 text-right">MEM%</span>
-      </div>
-      <div id="top-mem" class="space-y-0 divide-y divide-white/5"></div>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ TOP 10 — MEMORY</p>
+    <div class="grid grid-cols-12 gap-2 text-[8px] font-mono text-gray-600 uppercase tracking-widest pb-1 mb-1" style="border-bottom: 1px solid var(--line)">
+      <span class="col-span-1">PID</span>
+      <span class="col-span-2">USER</span>
+      <span class="col-span-5">CMD</span>
+      <span class="col-span-2 text-right">RSS</span>
+      <span class="col-span-2 text-right">MEM%</span>
     </div>
+    <div id="top-mem" class="text-[10.5px]"></div>
   </div>
 </div>
 
-<!-- Disks, Network, Temperatures -->
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6 animate-fade-up delay-4">
-  <div class="glass rounded-2xl p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Disks</h2>
+<!-- ═══════════════ DISKS + NET + TEMPS ═══════════════ -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-5 animate-fade-up delay-4">
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ DISKS</p>
     <div id="s-disks" class="space-y-2 text-xs"></div>
-    <h3 class="text-[10px] text-gray-600 uppercase tracking-wider mt-4 mb-2">I/O</h3>
+    <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mt-4 mb-2">I/O THROUGHPUT</p>
     <div id="s-disk-io" class="space-y-1 text-xs"></div>
   </div>
-
-  <div class="glass rounded-2xl p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Netværk</h2>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ NETWORK</p>
     <div id="s-wifi" class="space-y-1 text-xs mb-3"></div>
-    <h3 class="text-[10px] text-gray-600 uppercase tracking-wider mb-2">Interfaces & throughput</h3>
+    <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mb-2">INTERFACES + THROUGHPUT</p>
     <div id="s-net" class="space-y-1 text-xs"></div>
   </div>
-
-  <div class="glass rounded-2xl p-5">
-    <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Temperaturer</h2>
+  <div class="panel p-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ THERMAL ZONES</p>
     <div id="s-temps" class="space-y-1 text-xs"></div>
-    <h3 class="text-[10px] text-gray-600 uppercase tracking-wider mt-4 mb-2">Skærm</h3>
-    <p class="text-[11px] text-gray-400 font-mono leading-relaxed" id="s-display">---</p>
+    <p class="text-[9px] text-gray-600 uppercase tracking-widest font-mono mt-4 mb-2">DISPLAY</p>
+    <p class="text-[10px] font-mono text-gray-400 leading-relaxed" id="s-display">--</p>
   </div>
 </div>
 
-<!-- Docker -->
-<div class="glass rounded-2xl p-5 mb-6 animate-fade-up delay-4">
-  <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Docker Containers</h2>
+<!-- ═══════════════ DOCKER ═══════════════ -->
+<div class="panel p-4 mb-5 animate-fade-up delay-4"><span class="corner-tr"></span><span class="corner-bl"></span>
+  <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ DOCKER CONTAINERS</p>
   <div id="s-containers" class="text-xs"></div>
 </div>
 
@@ -205,34 +267,22 @@
 {% block scripts %}
 <script>
   function tempColor(c) {
-    if (c < 40) return 'text-green-400';
-    if (c < 55) return 'text-yellow-400';
-    if (c < 70) return 'text-orange-400';
+    if (c < 40) return 'text-emerald-400';
+    if (c < 55) return 'text-cyber-300';
+    if (c < 70) return 'text-amber-400';
     return 'text-red-400';
   }
-  function coreColor(pct) {
-    if (pct < 20) return 'rgba(34,197,94,0.25)';
-    if (pct < 50) return 'rgba(56,189,248,0.35)';
-    if (pct < 75) return 'rgba(234,179,8,0.45)';
-    return 'rgba(239,68,68,0.55)';
-  }
-  function coreBorder(pct) {
-    if (pct < 20) return 'rgba(34,197,94,0.4)';
-    if (pct < 50) return 'rgba(56,189,248,0.5)';
-    if (pct < 75) return 'rgba(234,179,8,0.6)';
-    return 'rgba(239,68,68,0.7)';
-  }
-  function fmtKb(n) {
-    if (n == null) return '--';
-    if (n < 1024) return n.toFixed(1) + ' kB';
-    if (n < 1048576) return (n/1024).toFixed(1) + ' MB';
-    return (n/1048576).toFixed(2) + ' GB';
+  function coreBg(pct) {
+    if (pct < 20) return ['rgba(163,230,53,0.10)', 'rgba(163,230,53,0.25)'];
+    if (pct < 50) return ['rgba(34,211,238,0.12)', 'rgba(34,211,238,0.35)'];
+    if (pct < 75) return ['rgba(245,158,11,0.16)', 'rgba(245,158,11,0.45)'];
+    return ['rgba(239,68,68,0.22)', 'rgba(239,68,68,0.6)'];
   }
   function fmtRss(kb) {
     if (kb == null) return '--';
-    if (kb < 1024) return kb + ' kB';
-    if (kb < 1048576) return (kb/1024).toFixed(0) + ' MB';
-    return (kb/1048576).toFixed(2) + ' GB';
+    if (kb < 1024) return kb + 'k';
+    if (kb < 1048576) return (kb/1024).toFixed(0) + 'M';
+    return (kb/1048576).toFixed(2) + 'G';
   }
 
   async function refresh() {
@@ -247,64 +297,67 @@
       document.getElementById('s-uptime').textContent = d.uptime || '';
       document.getElementById('s-uptime-since').textContent = d.uptime_since || '';
 
-      // Top gauges
+      // Big gauges
       const cpuPct = d.cpu.usage_pct || 0;
-      document.getElementById('g-cpu').textContent = cpuPct + '%';
-      document.getElementById('g-cpu-bar').style.width = cpuPct + '%';
+      document.getElementById('g-cpu').innerHTML = cpuPct.toFixed(1) + '<span class="text-base text-gray-600">%</span>';
+      document.getElementById('g-cpu-bar').style.width = Math.min(cpuPct, 100) + '%';
       document.getElementById('g-cpu-cores').textContent = d.cpu.cores;
       document.getElementById('g-cpu-load').textContent = (d.cpu.load_avg || []).join(' ');
 
       const memPct = d.memory.usage_pct || 0;
-      document.getElementById('g-mem').textContent = memPct + '%';
-      document.getElementById('g-mem-bar').style.width = memPct + '%';
+      document.getElementById('g-mem').innerHTML = memPct.toFixed(1) + '<span class="text-base text-gray-600">%</span>';
+      document.getElementById('g-mem-bar').style.width = Math.min(memPct, 100) + '%';
       document.getElementById('g-mem-used').textContent = d.memory.used_gb;
       document.getElementById('g-mem-tot').textContent = d.memory.total_gb;
-      document.getElementById('g-mem-swap').textContent =
-        `${d.memory.swap_used_gb}/${d.memory.swap_total_gb} GB`;
+      document.getElementById('g-mem-swap').textContent = `${d.memory.swap_used_gb}/${d.memory.swap_total_gb}G`;
 
       const gt = d.gpu.temp_c;
-      document.getElementById('g-gpu').textContent = (gt != null ? gt + '°' : '--');
+      document.getElementById('g-gpu').innerHTML = (gt != null ? gt : '--') + '<span class="text-base text-gray-600">°C</span>';
       document.getElementById('g-gpu-bar').style.width = (gt != null ? Math.min(gt, 100) : 0) + '%';
       document.getElementById('g-gpu-util').textContent = (d.gpu.util_gpu_pct ?? '--') + '%';
       document.getElementById('g-gpu-power').textContent = d.gpu.power_w || '--';
 
       const diskPct = parseInt(d.disk.usage_pct) || 0;
-      document.getElementById('g-disk').textContent = d.disk.usage_pct;
+      document.getElementById('g-disk').innerHTML = diskPct + '<span class="text-base text-gray-600">%</span>';
       document.getElementById('g-disk-bar').style.width = diskPct + '%';
       document.getElementById('g-disk-used').textContent = d.disk.used;
       document.getElementById('g-disk-tot').textContent = d.disk.total;
 
-      // Per-core grid
+      // Per-core
       const grid = document.getElementById('cores-grid');
       const cores = d.cpu.per_core || [];
+      const freqs = d.cpu.per_core_mhz || [];
       if (grid.children.length !== cores.length) {
         grid.innerHTML = cores.map((_, i) => `
-          <div class="core-cell rounded-md text-center py-1.5 px-1" id="core-${i}" style="background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.2)">
-            <div class="text-[9px] text-gray-500 font-mono">${i + 1}</div>
-            <div class="text-[11px] font-bold text-white tabular-nums" id="core-${i}-pct">--</div>
+          <div class="core-cell" id="core-${i}">
+            <div class="text-[8px] text-gray-600 font-mono">${String(i+1).padStart(2,'0')}</div>
+            <div class="text-[11px] font-bold num text-white" id="core-${i}-pct">--</div>
+            <div class="text-[7.5px] text-gray-600 font-mono mt-0.5" id="core-${i}-mhz">--</div>
           </div>`).join('');
       }
       cores.forEach((pct, i) => {
         const cell = document.getElementById(`core-${i}`);
         const txt = document.getElementById(`core-${i}-pct`);
-        if (cell) {
-          cell.style.background = coreColor(pct);
-          cell.style.borderColor = coreBorder(pct);
-        }
-        if (txt) txt.textContent = Math.round(pct) + '%';
+        const mhz = document.getElementById(`core-${i}-mhz`);
+        if (cell) { const [bg, b] = coreBg(pct); cell.style.background = bg; cell.style.borderColor = b; }
+        if (txt) txt.textContent = Math.round(pct);
+        if (mhz) mhz.textContent = freqs[i] ? freqs[i] : '--';
       });
       document.getElementById('s-cpu-model').textContent = d.cpu.model || '';
+      document.getElementById('s-cpu-gov').textContent = d.cpu.governor || '--';
+      document.getElementById('s-cpu-driver').textContent = d.cpu.driver || '--';
+      document.getElementById('s-cpu-fmax').textContent = d.cpu.freq_max_mhz || '--';
 
       // GPU detail
-      document.getElementById('s-gpu-name').textContent = d.gpu.name || '---';
+      document.getElementById('s-gpu-name').textContent = d.gpu.name || '--';
+      document.getElementById('s-gpu-pstate').textContent = d.gpu.pstate || 'P--';
       if (d.gpu.memory_used_mb == null) {
-        document.getElementById('s-gpu-vram').textContent = 'Unified (deler RAM)';
+        document.getElementById('s-gpu-vram').textContent = 'UNIFIED · SYSTEM RAM';
         document.getElementById('s-gpu-vram-bar').style.width = (d.memory.usage_pct || 0) + '%';
       } else {
         const vu = d.gpu.memory_used_mb, vt = d.gpu.memory_total_mb || 1;
         const vp = Math.round(vu / vt * 100);
-        document.getElementById('s-gpu-vram').textContent =
-          `${(vu/1024).toFixed(1)} / ${(vt/1024).toFixed(0)} GB (${vp}%)`;
+        document.getElementById('s-gpu-vram').textContent = `${(vu/1024).toFixed(1)} / ${(vt/1024).toFixed(0)} GB (${vp}%)`;
         document.getElementById('s-gpu-vram-bar').style.width = vp + '%';
       }
       document.getElementById('s-gpu-util').textContent = (d.gpu.util_gpu_pct ?? '--') + '%';
@@ -313,54 +366,111 @@
       document.getElementById('s-gpu-mutil-bar').style.width = (d.gpu.util_mem_pct || 0) + '%';
       document.getElementById('s-gpu-pwr').textContent = d.gpu.power_w || '--';
       document.getElementById('s-gpu-drv').textContent = d.gpu.driver || '--';
-      document.getElementById('s-gpu-clk-gr').textContent = (d.gpu.clock_gr_mhz ? d.gpu.clock_gr_mhz + ' MHz' : '--');
-      document.getElementById('s-gpu-clk-mem').textContent = (d.gpu.clock_mem_mhz ? d.gpu.clock_mem_mhz + ' MHz' : '--');
+      document.getElementById('s-gpu-clk-gr').textContent = d.gpu.clock_gr_mhz || '--';
+      document.getElementById('s-gpu-clk-mem').textContent = d.gpu.clock_mem_mhz || '--';
+      const thr = document.getElementById('s-gpu-throttle');
+      if (d.gpu.throttle && d.gpu.throttle.length > 0) {
+        thr.textContent = '⚠ THROTTLE: ' + d.gpu.throttle.join(', ');
+        thr.classList.remove('hidden');
+      } else thr.classList.add('hidden');
+
+      // Memory breakdown
+      document.getElementById('m-cached').textContent = d.memory.cached_gb;
+      document.getElementById('m-buf').textContent = d.memory.buffers_gb;
+      document.getElementById('m-slab').textContent = d.memory.slab_gb;
+      document.getElementById('m-kstack').textContent = d.memory.kernel_stack_mb;
+      document.getElementById('m-ptables').textContent = d.memory.page_tables_mb;
+      document.getElementById('m-dirty').textContent = d.memory.dirty_mb;
+      document.getElementById('m-wb').textContent = d.memory.writeback_mb;
+
+      // System health
+      document.getElementById('h-procs').textContent = d.health.processes;
+      document.getElementById('h-threads').textContent = d.health.threads;
+      const zEl = document.getElementById('h-zombies');
+      zEl.textContent = d.health.zombies;
+      zEl.className = 'num text-lg font-bold mt-1 ' + (d.health.zombies > 0 ? 'text-amber-400' : 'text-emerald-300');
+      document.getElementById('h-tcp').textContent = d.health.tcp_established;
+      document.getElementById('h-tcpl').textContent = d.health.tcp_listen;
+      document.getElementById('h-udp').textContent = d.health.udp_listen;
+      document.getElementById('h-who').innerHTML = (d.health.who || []).map(w => `<div class="truncate">${w}</div>`).join('') || '<div class="text-gray-700">none</div>';
+      document.getElementById('h-reboot').classList.toggle('hidden', !d.health.reboot_required);
+
+      // GPU processes
+      const procs = d.gpu_procs || [];
+      document.getElementById('s-gpu-procs').innerHTML = procs.length === 0
+        ? '<span class="text-gray-700 text-[10px]">no gpu processes</span>'
+        : procs.map(p => `
+          <div class="grid grid-cols-12 gap-2 py-1 row-alt px-1 rounded font-mono">
+            <span class="col-span-2 text-gray-500 text-[10px]">${p.pid}</span>
+            <span class="col-span-1 text-[10px] ${p.type === 'C' ? 'text-emerald-400' : 'text-cyber-400'}">${p.type}</span>
+            <span class="col-span-5 text-white truncate text-[11px]">${p.command || ''}</span>
+            <span class="col-span-2 text-right text-[10px] text-cyber-300 num">${p.sm_pct ?? '--'}${p.sm_pct != null ? '%' : ''}</span>
+            <span class="col-span-2 text-right text-[10px] text-emerald-300 num">${p.mem_pct ?? '--'}${p.mem_pct != null ? '%' : ''}</span>
+          </div>`).join('');
+
+      // NVMe
+      const nvme = d.nvme || [];
+      document.getElementById('s-nvme').innerHTML = nvme.length === 0
+        ? '<span class="text-gray-700 text-[10px]">no nvme devices</span>'
+        : nvme.map(n => {
+          const temps = (n.temperatures || []).map(t => {
+            const c = t.temp_c < 50 ? 'text-emerald-400' : t.temp_c < 65 ? 'text-amber-400' : 'text-red-400';
+            return `<span class="${c} font-mono text-[9px]">${t.label} ${t.temp_c}°</span>`;
+          }).join(' · ');
+          return `<div class="row-alt p-2 rounded space-y-1">
+            <div class="flex justify-between items-center">
+              <span class="text-white font-mono text-xs font-semibold">▸ ${n.device}<span class="text-gray-600 ml-2">/dev/${n.namespace}</span></span>
+              <span class="text-gray-400 text-[10px] font-mono">${n.size}</span>
+            </div>
+            <div class="text-[10px] text-gray-400 font-mono">${n.model}</div>
+            <div class="flex justify-between text-[9px] text-gray-500 font-mono">
+              <span>FW <span class="text-gray-300">${n.firmware}</span></span>
+              <span><span class="led ${n.state === 'live' ? 'led-on' : 'led-warn'}" style="margin-right:4px"></span>${n.state}</span>
+              <span class="text-gray-600 truncate max-w-[120px]" title="${n.serial}">${n.serial}</span>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-1">${temps}</div>
+          </div>`;
+        }).join('');
 
       // Top processes
       const renderProc = (rows, mode) => rows.map(p => `
-        <div class="grid grid-cols-12 gap-2 py-1 text-gray-300 font-mono stat-row px-1 rounded">
+        <div class="grid grid-cols-12 gap-2 py-1 row-alt px-1 rounded font-mono">
           <span class="col-span-1 text-gray-500 text-[10px]">${p.pid}</span>
           <span class="col-span-2 text-[10px] text-gray-400 truncate">${p.user}</span>
           <span class="col-span-5 text-white truncate text-[11px]">${p.command || ''}</span>
-          <span class="col-span-2 text-right text-[10px] ${mode==='cpu'?'text-sky-300':'text-gray-400'}">${p.cpu_pct?.toFixed(1) ?? '--'}</span>
-          <span class="col-span-2 text-right text-[10px] ${mode==='mem'?'text-emerald-300':'text-gray-400'}">${
-            mode === 'mem' ? fmtRss(p.rss_kb) : (p.mem_pct?.toFixed(1) ?? '--')
-          }</span>
+          <span class="col-span-2 text-right text-[10px] ${mode==='cpu'?'text-cyber-300':'text-gray-400'} num">${p.cpu_pct?.toFixed(1) ?? '--'}</span>
+          <span class="col-span-2 text-right text-[10px] ${mode==='mem'?'text-emerald-300':'text-gray-400'} num">${mode === 'mem' ? fmtRss(p.rss_kb) : (p.mem_pct?.toFixed(1) ?? '--')}</span>
         </div>`).join('');
       document.getElementById('top-cpu').innerHTML = renderProc(d.top_cpu || [], 'cpu');
       document.getElementById('top-mem').innerHTML = renderProc(d.top_mem || [], 'mem');
 
       // Disks
       document.getElementById('s-disks').innerHTML = (d.disks || []).map(dk => `
-        <div class="stat-row px-2 py-1.5 rounded">
+        <div class="row-alt px-2 py-1.5 rounded font-mono">
           <div class="flex justify-between items-center">
-            <span class="text-white font-mono text-[11px]" title="${dk.source}">${dk.mount}</span>
+            <span class="text-white text-[11px]" title="${dk.source}">${dk.mount}</span>
             <span class="text-gray-400 text-[10px]">${dk.used} / ${dk.size}</span>
           </div>
-          <div class="flex justify-between items-center mt-0.5">
-            <span class="text-[9px] text-gray-600 font-mono">${dk.fstype} · ${dk.source.split('/').pop()}</span>
-            <span class="text-[10px] text-gray-500">${dk.usage_pct}</span>
+          <div class="flex justify-between items-center text-[9px] mt-0.5">
+            <span class="text-gray-600">${dk.fstype} · ${dk.source.split('/').pop()}</span>
+            <span class="text-gray-500">${dk.usage_pct}</span>
           </div>
         </div>`).join('');
 
-      // Disk I/O
       document.getElementById('s-disk-io').innerHTML = (d.disk_io || []).map(io => `
-        <div class="flex justify-between text-gray-400 stat-row px-2 py-1 rounded">
-          <span class="font-mono text-[10px]">${io.device}</span>
-          <span class="text-[10px]">
-            <span class="text-sky-300">↓ ${io.read_kbps.toFixed(0)} kB/s</span> ·
-            <span class="text-emerald-300">↑ ${io.write_kbps.toFixed(0)} kB/s</span>
-          </span>
-        </div>`).join('') || '<span class="text-gray-600 text-[10px]">Ingen aktive disks</span>';
+        <div class="flex justify-between row-alt px-2 py-1 rounded font-mono text-[10px]">
+          <span class="text-gray-400">${io.device}</span>
+          <span><span class="text-cyber-300">↓ ${io.read_kbps.toFixed(0)}</span>  <span class="text-emerald-300">↑ ${io.write_kbps.toFixed(0)}</span> <span class="text-gray-700">kB/s</span></span>
+        </div>`).join('') || '<span class="text-gray-700 text-[10px] font-mono">idle</span>';
 
       // Network
       const w = d.network.wifi || {};
       const wifiEl = document.getElementById('s-wifi');
       if (w.ssid) {
         wifiEl.innerHTML = `
-          <div class="flex justify-between text-gray-400"><span>WiFi</span><span class="text-white font-medium">${w.ssid}</span></div>
-          <div class="flex justify-between text-gray-400"><span>Signal</span><span class="text-white">${w.signal_pct ?? '--'}%</span></div>
-          <div class="flex justify-between text-gray-400"><span>Hastighed</span><span class="text-white">${w.rate || '--'}</span></div>`;
+          <div class="flex justify-between font-mono"><span class="text-gray-500 text-[10px]">WIFI</span><span class="text-white text-[10px]">${w.ssid}</span></div>
+          <div class="flex justify-between font-mono"><span class="text-gray-500 text-[10px]">SIGNAL</span><span class="text-white text-[10px]">${w.signal_pct ?? '--'}%</span></div>
+          <div class="flex justify-between font-mono"><span class="text-gray-500 text-[10px]">RATE</span><span class="text-white text-[10px]">${w.rate || '--'}</span></div>`;
       } else wifiEl.innerHTML = '';
 
       const ifaceMap = {};
@@ -371,23 +481,23 @@
         const ip = ifaceMap[name] || '';
         const t = tp[name] || {rx_kbps:0, tx_kbps:0, rx_total_mb:0, tx_total_mb:0};
         return `
-          <div class="stat-row px-2 py-1 rounded">
+          <div class="row-alt px-2 py-1 rounded font-mono">
             <div class="flex justify-between">
-              <span class="font-mono text-[10px] text-white">${name}</span>
-              <span class="font-mono text-[10px] text-gray-300">${ip}</span>
+              <span class="text-white text-[10px]">${name}</span>
+              <span class="text-gray-300 text-[10px]">${ip}</span>
             </div>
             <div class="flex justify-between text-[9px] text-gray-500">
-              <span>↓ ${t.rx_kbps.toFixed(1)} kB/s · ↑ ${t.tx_kbps.toFixed(1)} kB/s</span>
-              <span>Σ ${t.rx_total_mb} / ${t.tx_total_mb} MB</span>
+              <span><span class="text-cyber-400">↓ ${t.rx_kbps.toFixed(1)}</span> · <span class="text-emerald-400">↑ ${t.tx_kbps.toFixed(1)}</span> kB/s</span>
+              <span>Σ ${t.rx_total_mb}/${t.tx_total_mb} MB</span>
             </div>
           </div>`;
       }).join('');
 
-      // Temperatures
+      // Temps
       document.getElementById('s-temps').innerHTML = (d.temperatures || []).map(t => `
-        <div class="flex justify-between stat-row px-2 py-1 rounded">
+        <div class="flex justify-between row-alt px-2 py-1 rounded font-mono">
           <span class="truncate max-w-[180px] text-gray-400 text-[10px]" title="${t.zone}">${t.zone}</span>
-          <span class="${tempColor(t.temp_c)} font-mono text-[10px]">${t.temp_c}°C</span>
+          <span class="${tempColor(t.temp_c)} text-[10px] num">${t.temp_c}°</span>
         </div>`).join('');
 
       document.getElementById('s-display').textContent = d.display || '';
@@ -395,76 +505,29 @@
       // Docker
       const cEl = document.getElementById('s-containers');
       if (!d.containers || d.containers.length === 0) {
-        cEl.innerHTML = '<span class="text-gray-600">Ingen aktive containers</span>';
+        cEl.innerHTML = '<span class="text-gray-700 font-mono text-[10px]">no active containers</span>';
       } else {
         cEl.innerHTML = `
-          <div class="grid grid-cols-12 gap-2 text-[9px] text-gray-600 uppercase tracking-wider font-medium pb-2 border-b border-white/5 mb-1">
-            <span class="col-span-3">Name</span>
-            <span class="col-span-6">Status</span>
-            <span class="col-span-3">Ports</span>
+          <div class="grid grid-cols-12 gap-2 text-[8px] font-mono text-gray-600 uppercase tracking-widest pb-1 mb-1" style="border-bottom: 1px solid var(--line)">
+            <span class="col-span-3">NAME</span>
+            <span class="col-span-6">STATUS</span>
+            <span class="col-span-3">PORTS</span>
           </div>
           ${d.containers.map(c => {
             const ok = c.status.toLowerCase().includes('up');
-            return `<div class="grid grid-cols-12 gap-2 py-1 stat-row px-1 rounded">
+            return `<div class="grid grid-cols-12 gap-2 py-1 row-alt px-1 rounded font-mono">
               <span class="col-span-3 flex items-center gap-2">
-                <span class="w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-400' : 'bg-yellow-400'}"></span>
-                <span class="font-mono text-white text-[11px] truncate">${c.name}</span>
+                <span class="led ${ok ? 'led-on' : 'led-warn'}"></span>
+                <span class="text-white text-[11px] truncate">${c.name}</span>
               </span>
               <span class="col-span-6 text-gray-400 text-[10px] truncate">${c.status}</span>
-              <span class="col-span-3 text-gray-500 text-[10px] font-mono truncate">${c.ports || ''}</span>
+              <span class="col-span-3 text-gray-500 text-[10px] truncate">${c.ports || ''}</span>
             </div>`;
           }).join('')}`;
       }
 
-      // GPU processer + throttle/pstate
-      document.getElementById('s-gpu-pstate').textContent = d.gpu.pstate ? `pstate: ${d.gpu.pstate}` : '';
-      const throttleEl = document.getElementById('s-gpu-throttle');
-      if (d.gpu.throttle && d.gpu.throttle.length > 0) {
-        throttleEl.textContent = '⚠ Throttling: ' + d.gpu.throttle.join(', ');
-        throttleEl.classList.remove('hidden');
-      } else {
-        throttleEl.classList.add('hidden');
-      }
-      const procs = d.gpu_procs || [];
-      document.getElementById('s-gpu-procs').innerHTML = procs.length === 0
-        ? '<span class="text-gray-600 text-[10px]">Ingen GPU-processer</span>'
-        : procs.map(p => `
-          <div class="grid grid-cols-12 gap-2 py-1 stat-row px-1 rounded font-mono">
-            <span class="col-span-2 text-gray-500 text-[10px]">${p.pid}</span>
-            <span class="col-span-1 text-[10px] ${p.type === 'C' ? 'text-emerald-300' : 'text-sky-300'}" title="${p.type === 'C' ? 'Compute' : 'Graphics'}">${p.type}</span>
-            <span class="col-span-5 text-white truncate text-[11px]">${p.command || ''}</span>
-            <span class="col-span-2 text-right text-[10px] text-sky-300">${p.sm_pct ?? '--'}${p.sm_pct != null ? '%' : ''}</span>
-            <span class="col-span-2 text-right text-[10px] text-emerald-300">${p.mem_pct ?? '--'}${p.mem_pct != null ? '%' : ''}</span>
-          </div>`).join('');
-
-      // NVMe diske
-      const nvme = d.nvme || [];
-      document.getElementById('s-nvme').innerHTML = nvme.length === 0
-        ? '<span class="text-gray-600 text-[10px]">Ingen NVMe enheder fundet</span>'
-        : nvme.map(n => {
-          const temps = (n.temperatures || []).map(t => {
-            const c = t.temp_c < 50 ? 'text-green-400' : t.temp_c < 65 ? 'text-yellow-400' : 'text-red-400';
-            return `<span class="${c} font-mono text-[10px]">${t.label} ${t.temp_c}°C</span>`;
-          }).join('  ');
-          return `<div class="stat-row p-2 rounded space-y-1">
-            <div class="flex justify-between items-center">
-              <span class="text-white font-semibold text-xs">${n.device} <span class="text-gray-500 font-mono text-[10px]">/dev/${n.namespace}</span></span>
-              <span class="text-gray-400 text-[10px]">${n.size}</span>
-            </div>
-            <div class="text-[10px] text-gray-400">${n.model}</div>
-            <div class="flex justify-between text-[10px] text-gray-500">
-              <span>FW <span class="font-mono">${n.firmware}</span></span>
-              <span>State <span class="text-${n.state === 'live' ? 'green' : 'amber'}-400 font-medium">${n.state}</span></span>
-              <span class="font-mono text-gray-600 truncate max-w-[120px]" title="${n.serial}">${n.serial}</span>
-            </div>
-            <div class="flex flex-wrap gap-x-3 gap-y-1 pt-1">${temps}</div>
-          </div>`;
-        }).join('');
-
-      document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('da-DK');
-    } catch (e) {
-      console.error(e);
-    }
+      document.getElementById('last-updated').textContent = '▸ ' + new Date().toLocaleTimeString('da-DK');
+    } catch (e) { console.error(e); }
   }
 
   refresh();

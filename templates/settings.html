@@ -1,59 +1,61 @@
 {% extends "base.html" %}
-{% block title %}Indstillinger — Spark Hub{% endblock %}
+{% block title %}SETTINGS :: {{ config.server_name }}{% endblock %}
 
 {% block content %}
 <div class="max-w-xl mx-auto">
-  <div class="mb-6 flex items-center gap-3 animate-fade-up">
-    <a href="/dashboard" class="text-gray-500 hover:text-white transition-colors text-xs font-medium">&larr; Dashboard</a>
-    <span class="text-gray-800">/</span>
-    <h1 class="text-lg font-semibold">Indstillinger</h1>
+  <div class="mb-5 flex items-center gap-3 animate-fade-up">
+    <a href="/dashboard" class="font-mono text-[10px] text-gray-500 hover:text-cyber-300 transition-colors tracking-widest uppercase">← DASHBOARD</a>
+    <span class="text-gray-700 font-mono">/</span>
+    <h1 class="font-mono text-sm font-bold tracking-widest uppercase text-white">SETTINGS</h1>
   </div>
 
   {% if request.query_params.get('saved') %}
-  <div class="mb-4 glass p-3 text-green-400 rounded-xl text-sm animate-fade-up" style="border-color:rgba(34,197,94,0.2)">
-    Indstillinger gemt
+  <div class="panel p-3 mb-4 text-emerald-400 font-mono text-[11px] animate-fade-up" style="border-color:rgba(16,185,129,0.3)">
+    <span class="corner-tr"></span><span class="corner-bl"></span>
+    ✓ SETTINGS SAVED
   </div>
   {% endif %}
 
-  <div class="glass rounded-2xl p-6 mb-6 animate-fade-up delay-1">
-    <h2 class="text-sm font-semibold mb-5 text-white">Generelt</h2>
-    <form method="post" action="/settings">
-      <div class="mb-4">
-        <label class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Servernavn</label>
+  <div class="panel p-5 mb-4 animate-fade-up delay-1"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-4">▮ GENERAL</p>
+    <form method="post" action="/settings" class="space-y-4">
+      <div>
+        <label class="block text-[9px] text-gray-500 mb-1.5 uppercase tracking-widest font-mono">Server name</label>
         <input type="text" name="server_name" value="{{ config.server_name }}"
-               class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-sky-500/50 transition-all">
-        <p class="text-[10px] text-gray-600 mt-2">Vises i nav og hero på dashboardet</p>
+               class="w-full bg-black/30 rounded px-3 py-2 text-white text-sm font-mono focus:outline-none transition-all"
+               style="border: 1px solid rgba(34,211,238,0.15)">
       </div>
-      <div class="mb-4">
-        <label class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Tailscale IP</label>
+      <div>
+        <label class="block text-[9px] text-gray-500 mb-1.5 uppercase tracking-widest font-mono">Tailscale IP</label>
         <input type="text" name="tailscale_ip" value="{{ config.tailscale_ip }}"
-               class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-mono focus:outline-none focus:border-sky-500/50 transition-all">
-        <p class="text-[10px] text-gray-600 mt-2">Vises som reference i footeren</p>
+               class="w-full bg-black/30 rounded px-3 py-2 text-white text-sm font-mono focus:outline-none transition-all"
+               style="border: 1px solid rgba(34,211,238,0.15)">
       </div>
-      <div class="mb-6">
-        <label class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Terminal-port</label>
+      <div>
+        <label class="block text-[9px] text-gray-500 mb-1.5 uppercase tracking-widest font-mono">Terminal port</label>
         <input type="number" name="terminal_port" value="{{ config.terminal_port|default(7862) }}"
-               class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-mono focus:outline-none focus:border-sky-500/50 transition-all">
-        <p class="text-[10px] text-gray-600 mt-2">Port for embedded web-terminal (standard: 7862)</p>
+               class="w-full bg-black/30 rounded px-3 py-2 text-white text-sm font-mono focus:outline-none transition-all"
+               style="border: 1px solid rgba(34,211,238,0.15)">
+        <p class="text-[9px] text-gray-700 mt-1 font-mono">Embedded web-terminal source (default 7862)</p>
       </div>
       <button type="submit"
-              class="w-full py-3 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold rounded-xl transition-all text-sm shadow-lg shadow-sky-500/20">
-        Gem indstillinger
+              class="w-full py-2.5 text-sm font-mono font-bold uppercase tracking-widest rounded transition-all"
+              style="background: linear-gradient(90deg, rgba(34,211,238,0.15), rgba(34,211,238,0.25)); border: 1px solid rgba(34,211,238,0.4); color: var(--cyan)">
+        ▸ SAVE
       </button>
     </form>
   </div>
 
-  <div class="glass rounded-2xl p-6 mb-6 animate-fade-up delay-2">
-    <h2 class="text-sm font-semibold mb-4 text-white">AI Services</h2>
-    <div id="settings-services" class="space-y-0 divide-y divide-white/5">
-      <p class="text-gray-600 text-xs">Henter status...</p>
+  <div class="panel p-5 mb-4 animate-fade-up delay-2"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-4">▮ AI SERVICES</p>
+    <div id="settings-services" class="text-xs font-mono">
+      <p class="text-gray-700">Loading...</p>
     </div>
   </div>
 
-  <div class="glass rounded-2xl p-6 animate-fade-up delay-3">
-    <h2 class="text-sm font-semibold mb-2 text-white">Om</h2>
-    <p class="text-xs text-gray-500 mb-1">Spark Hub — DGX Spark system monitor + service control</p>
-    <p class="text-[10px] text-gray-700 font-mono" id="settings-network">---</p>
+  <div class="panel p-5 animate-fade-up delay-3"><span class="corner-tr"></span><span class="corner-bl"></span>
+    <p class="text-[9px] text-gray-500 uppercase tracking-widest font-mono mb-3">▮ NETWORK</p>
+    <p class="text-[10px] font-mono text-gray-400" id="settings-network">--</p>
   </div>
 </div>
 {% endblock %}
@@ -64,28 +66,29 @@
     try {
       const list = await (await fetch('/api/services')).json();
       const c = document.getElementById('settings-services');
-      c.innerHTML = '';
-      list.forEach(s => {
+      c.innerHTML = list.map(s => {
         const ok = s.active === 'active' && s.responsive;
-        const row = document.createElement('div');
-        row.className = 'flex items-center gap-3 py-3';
-        row.innerHTML = `
-          <div class="w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-400' : (s.active === 'active' ? 'bg-yellow-400' : 'bg-red-400')}"></div>
-          <span class="text-xs text-white">${s.name}</span>
-          <span class="text-[10px] text-gray-600 font-mono">:${s.port}</span>
-          <span class="ml-auto text-[10px] font-medium uppercase tracking-wider ${ok ? 'text-green-400' : 'text-gray-400'}">${s.active}</span>
-        `;
-        c.appendChild(row);
-      });
+        const led = ok ? 'background:var(--lime); box-shadow:0 0 6px var(--lime)'
+                       : s.active === 'active' ? 'background:var(--amber); box-shadow:0 0 6px var(--amber)'
+                       : 'background:var(--red); box-shadow:0 0 6px var(--red)';
+        return `<div class="flex items-center gap-3 py-2" style="border-bottom: 1px solid var(--line)">
+          <span class="w-1.5 h-1.5 rounded-full" style="${led}"></span>
+          <span class="text-white text-[11px]">${s.name}</span>
+          <span class="text-[10px] text-gray-600">:${s.port}</span>
+          <span class="ml-auto text-[9px] uppercase tracking-widest ${ok ? 'text-emerald-400' : 'text-gray-500'}">${s.active}</span>
+        </div>`;
+      }).join('');
     } catch (e) {
-      document.getElementById('settings-services').innerHTML = '<p class="text-red-400 text-xs">Fejl ved hentning</p>';
+      document.getElementById('settings-services').innerHTML = '<p class="text-red-400 text-[11px]">Error</p>';
     }
   }
   async function loadNetwork() {
     try {
       const n = await (await fetch('/api/network')).json();
-      document.getElementById('settings-network').textContent =
-        `${n.hostname || ''} · LAN ${n.lan_ip || '?'} · Tailscale ${n.tailscale_ip || '?'}`;
+      document.getElementById('settings-network').innerHTML =
+        `<span class="text-gray-600">host</span> ${n.hostname || '?'} ·
+         <span class="text-gray-600">lan</span> <span class="text-cyber-300">${n.lan_ip || '?'}</span> ·
+         <span class="text-gray-600">tailscale</span> <span class="text-cyber-300">${n.tailscale_ip || '?'}</span>`;
     } catch (e) {}
   }
   loadServices();
