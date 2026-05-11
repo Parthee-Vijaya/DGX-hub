@@ -1,357 +1,373 @@
 """
-Spark Hub — Hjemmeserver portal til DGX Spark
-FastAPI backend med Jinja2 templates og Tailwind CSS
-Port 7863
+Spark Hub — DGX Spark system monitor dashboard
+FastAPI + Jinja2 + Tailwind. Port 7863.
+
+Tre fokusområder:
+  1. Detaljeret system-monitorering (CPU per-core, GPU, RAM, disk, net, processer)
+  2. Restart-knapper for vLLM (port 8901) og LiteLLM (port 4000) user systemd units
+  3. Indlejret terminal (iframe fra port 7862)
 """
 
-import json
 import asyncio
+import json
 import os
 import subprocess
 import time
 from pathlib import Path
-from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi import FastAPI, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from installers import REGISTRY as INSTALLER_REGISTRY
-from installers.base import InstallContext
-
 # ---------------------------------------------------------------------------
-# Config
+# Sørg for at systemctl --user virker fra service-konteksten
+# (dgx-3 har Linger=yes så /run/user/<uid> altid eksisterer)
 # ---------------------------------------------------------------------------
+os.environ.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 
 CONFIG_PATH = Path.home() / "spark-hub-config.json"
-
-TAILSCALE_IP = "100.92.142.31"
-
 DEFAULT_CONFIG = {
-    "setup_done": False,
     "server_name": "Spark Hub",
-    "tailscale_ip": TAILSCALE_IP,
-    "media_root": str(Path.home() / "Media"),
-    "media_paths": {
-        "film": str(Path.home() / "Media/film"),
-        "serier": str(Path.home() / "Media/serier"),
-        "fotos": str(Path.home() / "Media/fotos"),
-    },
-    "installed_services": [],
+    "tailscale_ip": "100.92.142.31",
+    "terminal_port": 7862,
 }
 
-SERVICES = [
-    {
-        "id": "jellyfin",
-        "name": "Jellyfin",
-        "description": "Open source medieserver",
-        "subtitle": "Stream film, serier og musik til alle enheder",
-        "icon": "film",
-        "port": 8096,
-        "url_template": "http://{ip}:8096",
-        "health_url": "http://localhost:8096/health",
-        "color": "from-purple-500 to-purple-700",
-        "category": "media",
+SERVICES = {
+    "vllm": {
+        "name": "vLLM",
+        "unit": "vllm.service",
+        "port": 8901,
+        "health_path": "/v1/models",
+        "description": "OpenAI-kompatibel inference server (Qwen3-Coder 30B FP8)",
     },
-    {
-        "id": "plex",
-        "name": "Plex",
-        "description": "Premium medieserver",
-        "subtitle": "Film, serier og live TV med apps til alle platforme",
-        "icon": "tv",
-        "port": 32400,
-        "url_template": "http://{ip}:32400/web",
-        "health_url": "http://localhost:32400/web",
-        "color": "from-yellow-500 to-orange-600",
-        "category": "media",
+    "litellm": {
+        "name": "LiteLLM",
+        "unit": "litellm.service",
+        "port": 4000,
+        "health_path": "/health/liveliness",
+        "description": "LLM-proxy der ruter til vLLM og Ollama",
     },
-    {
-        "id": "immich",
-        "name": "Immich",
-        "description": "Foto & video backup",
-        "subtitle": "Automatisk backup fra mobil med AI-genkendelse",
-        "icon": "camera",
-        "port": 2283,
-        "url_template": "http://{ip}:2283",
-        "health_url": "http://localhost:2283/api/server/ping",
-        "color": "from-green-500 to-teal-600",
-        "category": "media",
-    },
-    {
-        "id": "ai_toolbox",
-        "name": "AI Toolbox",
-        "description": "Multimodal AI suite",
-        "subtitle": "Qwen3-Omni chat + billedgenerering via vLLM",
-        "icon": "cpu",
-        "port": 7860,
-        "url_template": "http://{ip}:7860",
-        "health_url": "http://localhost:7860/",
-        "color": "from-blue-500 to-indigo-600",
-        "category": "ai",
-    },
-    {
-        "id": "ollama",
-        "name": "Ollama",
-        "description": "LLM model server",
-        "subtitle": "Gemma4, Qwen2.5-Coder og flere lokale modeller",
-        "icon": "brain",
-        "port": 11434,
-        "url_template": "http://{ip}:11434",
-        "health_url": "http://localhost:11434/api/tags",
-        "color": "from-red-500 to-pink-600",
-        "category": "ai",
-    },
-    {
-        "id": "nextcloud",
-        "name": "Nextcloud",
-        "description": "Privat cloud",
-        "subtitle": "Filer, kalender, kontakter og samarbejde",
-        "icon": "cloud",
-        "port": 8080,
-        "url_template": "http://{ip}:8080",
-        "health_url": "http://localhost:8080/status.php",
-        "color": "from-blue-400 to-cyan-600",
-        "category": "media",
-    },
-]
+}
 
 
 def load_config() -> dict:
     if CONFIG_PATH.exists():
-        with open(CONFIG_PATH) as f:
-            data = json.load(f)
-        merged = {**DEFAULT_CONFIG, **data}
-        return merged
+        try:
+            return {**DEFAULT_CONFIG, **json.loads(CONFIG_PATH.read_text())}
+        except Exception:
+            pass
     return DEFAULT_CONFIG.copy()
 
 
 def save_config(config: dict):
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
+    CONFIG_PATH.write_text(json.dumps(config, indent=2, ensure_ascii=False))
 
 
-# ---------------------------------------------------------------------------
-# App
-# ---------------------------------------------------------------------------
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Pre-load Gemma4 i Ollama ved opstart
-    asyncio.create_task(_preload_model())
-    yield
-
-
-async def _preload_model():
-    """Varm Ollama op ved at sende en kort request så modellen loades i GPU."""
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            await client.post(
-                "http://localhost:11434/api/chat",
-                json={"model": "mistral-small3.2:latest", "messages": [{"role": "user", "content": "hi"}], "stream": False},
-            )
-    except Exception:
-        pass
-
-
-app = FastAPI(title="Spark Hub", lifespan=lifespan)
+app = FastAPI(title="Spark Hub")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 
 # ---------------------------------------------------------------------------
-# Health check helper
+# Sider
 # ---------------------------------------------------------------------------
 
-async def check_service(client: httpx.AsyncClient, service: dict, request_host: str | None = None) -> dict:
-    response_ms = None
-    try:
-        t0 = time.monotonic()
-        resp = await client.get(service["health_url"], timeout=3.0, follow_redirects=True)
-        response_ms = round((time.monotonic() - t0) * 1000)
-        online = resp.status_code < 500
-    except Exception:
-        online = False
-    # Brug browserens hostname/IP i stedet for hardcoded IP
-    if request_host:
-        ip = request_host.split(":")[0]  # fjern port
-    else:
-        config = load_config()
-        ip = config.get("tailscale_ip", TAILSCALE_IP)
-    return {
-        "id": service["id"],
-        "name": service["name"],
-        "online": online,
-        "response_ms": response_ms,
-        "url": service["url_template"].format(ip=ip),
-        "icon": service["icon"],
-        "description": service["description"],
-        "subtitle": service.get("subtitle", ""),
-        "port": service.get("port"),
-        "color": service["color"],
-        "category": service["category"],
-    }
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    config = load_config()
-    if not config.get("setup_done"):
-        return RedirectResponse("/wizard")
+@app.get("/")
+async def root():
     return RedirectResponse("/dashboard")
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    config = load_config()
-    host = request.headers.get("host", "")
-    ip = host.split(":")[0] if host else config.get("tailscale_ip", TAILSCALE_IP)
-    services_with_urls = [
-        {**s, "url": s["url_template"].format(ip=ip)}
-        for s in SERVICES
-    ]
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
-        "config": config,
-        "services": services_with_urls,
+        "config": load_config(),
+        "services": SERVICES,
     })
 
 
-@app.get("/wizard", response_class=HTMLResponse)
-async def wizard(request: Request):
-    config = load_config()
-    return templates.TemplateResponse("wizard.html", {
+@app.get("/system", response_class=HTMLResponse)
+async def system_page(request: Request):
+    return templates.TemplateResponse("system.html", {
         "request": request,
-        "config": config,
+        "config": load_config(),
     })
 
 
-@app.post("/api/setup/complete")
-async def setup_complete(
-    server_name: str = Form("Spark Hub"),
-    tailscale_ip: str = Form(TAILSCALE_IP),
-):
-    config = load_config()
-    config["setup_done"] = True
-    config["server_name"] = server_name
-    config["tailscale_ip"] = tailscale_ip
-    save_config(config)
-    return RedirectResponse("/dashboard", status_code=303)
-
-
-@app.get("/api/status")
-async def api_status(request: Request):
-    host = request.headers.get("host")
-    async with httpx.AsyncClient() as client:
-        results = await asyncio.gather(
-            *[check_service(client, s, request_host=host) for s in SERVICES]
-        )
-    return JSONResponse({"services": list(results)})
-
-
-@app.get("/api/config")
-async def api_config():
-    return JSONResponse(load_config())
-
-
-@app.get("/api/network")
-async def api_network():
-    """Returnér maskinens aktuelle IP-adresser."""
-    loop = asyncio.get_event_loop()
-    info = await loop.run_in_executor(None, _get_network_info)
-    return JSONResponse(info)
-
-
-def _get_network_info() -> dict:
-    lan = _run("ip -4 addr show scope global | grep -v docker | grep -v br- | grep -v tailscale | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}' | head -1")
-    ts = _run("tailscale ip -4 2>/dev/null")
-    hostname = _run("hostname")
-    return {"lan_ip": lan, "tailscale_ip": ts, "hostname": hostname, "port": 7863}
-
-
-@app.post("/api/config")
-async def api_config_update(request: Request):
-    body = await request.json()
-    config = load_config()
-    config.update(body)
-    save_config(config)
-    return JSONResponse({"ok": True})
+@app.get("/terminal", response_class=HTMLResponse)
+async def terminal_page(request: Request):
+    return templates.TemplateResponse("terminal.html", {
+        "request": request,
+        "config": load_config(),
+    })
 
 
 @app.get("/settings", response_class=HTMLResponse)
-async def settings(request: Request):
-    config = load_config()
+async def settings_page(request: Request):
     return templates.TemplateResponse("settings.html", {
         "request": request,
-        "config": config,
+        "config": load_config(),
     })
 
 
 @app.post("/settings")
 async def settings_save(
-    request: Request,
     server_name: str = Form(...),
     tailscale_ip: str = Form(...),
+    terminal_port: int = Form(7862),
 ):
     config = load_config()
     config["server_name"] = server_name
     config["tailscale_ip"] = tailscale_ip
+    config["terminal_port"] = terminal_port
     save_config(config)
     return RedirectResponse("/settings?saved=1", status_code=303)
 
 
 # ---------------------------------------------------------------------------
-# System status API
+# Config / network
 # ---------------------------------------------------------------------------
 
-def _run(cmd: str) -> str:
+@app.get("/api/config")
+async def api_config():
+    return load_config()
+
+
+@app.post("/api/config")
+async def api_config_save(payload: dict):
+    config = load_config()
+    config.update(payload)
+    save_config(config)
+    return {"ok": True}
+
+
+@app.get("/api/network")
+async def api_network():
+    hostname = _run("hostname")
+    lan_ip = _run(
+        "ip -4 addr show scope global | grep -v docker | grep -v br- | "
+        "grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}' | head -1"
+    )
+    tailscale_ip = _run("tailscale ip -4 2>/dev/null | head -1")
+    return {"hostname": hostname, "lan_ip": lan_ip, "tailscale_ip": tailscale_ip}
+
+
+# ---------------------------------------------------------------------------
+# Services: status + restart (user systemd)
+# ---------------------------------------------------------------------------
+
+def _systemctl_user(*args, timeout: int = 10) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["systemctl", "--user", *args],
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
+async def _port_responsive(port: int, path: str = "/", timeout: float = 1.5) -> tuple[bool, int | None]:
     try:
-        return subprocess.check_output(cmd, shell=True, text=True, timeout=5).strip()
+        t0 = time.monotonic()
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.get(f"http://127.0.0.1:{port}{path}")
+        return r.status_code < 500, round((time.monotonic() - t0) * 1000)
+    except Exception:
+        return False, None
+
+
+@app.get("/api/services")
+async def api_services():
+    out = []
+    for sid, svc in SERVICES.items():
+        active = _systemctl_user("is-active", svc["unit"]).stdout.strip() or "inactive"
+        responsive, latency_ms = await _port_responsive(svc["port"], svc["health_path"])
+        out.append({
+            "id": sid,
+            "name": svc["name"],
+            "unit": svc["unit"],
+            "port": svc["port"],
+            "description": svc["description"],
+            "active": active,
+            "responsive": responsive,
+            "latency_ms": latency_ms,
+        })
+    return out
+
+
+@app.get("/api/services/{sid}/status")
+async def api_service_status(sid: str):
+    svc = SERVICES.get(sid)
+    if not svc:
+        return JSONResponse({"error": "unknown service"}, status_code=404)
+    active = _systemctl_user("is-active", svc["unit"]).stdout.strip() or "inactive"
+    responsive, latency_ms = await _port_responsive(svc["port"], svc["health_path"])
+    return {
+        "id": sid, "name": svc["name"], "unit": svc["unit"], "port": svc["port"],
+        "active": active, "responsive": responsive, "latency_ms": latency_ms,
+    }
+
+
+@app.post("/api/services/{sid}/restart")
+async def api_service_restart(sid: str):
+    svc = SERVICES.get(sid)
+    if not svc:
+        return JSONResponse({"error": "unknown service"}, status_code=404)
+    r = _systemctl_user("restart", svc["unit"], timeout=30)
+    return {
+        "ok": r.returncode == 0,
+        "returncode": r.returncode,
+        "stdout": r.stdout.strip(),
+        "stderr": r.stderr.strip(),
+    }
+
+
+@app.get("/api/services/{sid}/logs")
+async def api_service_logs(sid: str, lines: int = 100):
+    svc = SERVICES.get(sid)
+    if not svc:
+        return JSONResponse({"error": "unknown service"}, status_code=404)
+    r = subprocess.run(
+        ["journalctl", "--user", "-u", svc["unit"], "-n", str(min(max(lines, 10), 1000)),
+         "--no-pager", "--output=short-iso"],
+        capture_output=True, text=True, timeout=10,
+    )
+    return {"unit": svc["unit"], "lines": r.stdout.splitlines()}
+
+
+# ---------------------------------------------------------------------------
+# System info
+# ---------------------------------------------------------------------------
+
+def _run(cmd: str, timeout: float = 4.0) -> str:
+    try:
+        return subprocess.check_output(cmd, shell=True, text=True, timeout=timeout).strip()
     except Exception:
         return ""
 
 
-@app.get("/system", response_class=HTMLResponse)
-async def system_page(request: Request):
-    config = load_config()
-    return templates.TemplateResponse("system.html", {
-        "request": request,
-        "config": config,
-    })
-
-
 @app.get("/api/system")
 async def api_system():
-    """Samler alt system-info i ét JSON endpoint."""
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _collect_system_info)
     return JSONResponse(info)
 
 
+# Snapshots til delta-beregning på tværs af kald
+_PREV_CPU_STATS: dict | None = None
+_PREV_NET_STATS: dict | None = None
+_PREV_DISK_STATS: dict | None = None
+_PREV_TS: float = 0.0
+
+
+def _read_proc_stat() -> dict[str, list[int]]:
+    out = {}
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if not line.startswith("cpu"):
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            out[parts[0]] = [int(x) for x in parts[1:]]
+    except Exception:
+        pass
+    return out
+
+
+def _read_proc_net_dev() -> dict[str, tuple[int, int]]:
+    out = {}
+    try:
+        for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
+            name, _, rest = line.partition(":")
+            cols = rest.split()
+            if len(cols) >= 9:
+                out[name.strip()] = (int(cols[0]), int(cols[8]))
+    except Exception:
+        pass
+    return out
+
+
+def _read_proc_diskstats() -> dict[str, tuple[int, int]]:
+    out = {}
+    try:
+        for line in Path("/proc/diskstats").read_text().splitlines():
+            parts = line.split()
+            if len(parts) < 14:
+                continue
+            name = parts[2]
+            if name.startswith(("loop", "ram", "dm-")):
+                continue
+            if any(ch.isdigit() for ch in name[-1:]) and not name.endswith(("0", "1")) and "p" in name:
+                continue
+            out[name] = (int(parts[5]), int(parts[9]))
+    except Exception:
+        pass
+    return out
+
+
+def _cpu_usage_from_delta(prev: list[int], curr: list[int]) -> float:
+    if not prev or not curr or len(prev) < 4 or len(curr) < 4:
+        return 0.0
+    prev_idle = prev[3] + (prev[4] if len(prev) > 4 else 0)
+    curr_idle = curr[3] + (curr[4] if len(curr) > 4 else 0)
+    prev_total = sum(prev)
+    curr_total = sum(curr)
+    total_d = curr_total - prev_total
+    idle_d = curr_idle - prev_idle
+    if total_d <= 0:
+        return 0.0
+    return round((1 - idle_d / total_d) * 100, 1)
+
+
 def _collect_system_info() -> dict:
-    # --- CPU ---
-    cpu_model = _run("lscpu | grep 'Model name' | head -1 | cut -d: -f2").strip()
-    cpu_model2 = _run("lscpu | grep 'Model name' | tail -1 | cut -d: -f2").strip()
+    global _PREV_CPU_STATS, _PREV_NET_STATS, _PREV_DISK_STATS, _PREV_TS
+
+    curr_cpu = _read_proc_stat()
+    curr_net = _read_proc_net_dev()
+    curr_disk = _read_proc_diskstats()
+    now = time.monotonic()
+
+    if _PREV_CPU_STATS is None:
+        time.sleep(0.15)
+        prev_cpu = curr_cpu
+        curr_cpu = _read_proc_stat()
+        prev_net = curr_net
+        curr_net = _read_proc_net_dev()
+        prev_disk = curr_disk
+        curr_disk = _read_proc_diskstats()
+        dt = 0.15
+    else:
+        prev_cpu = _PREV_CPU_STATS
+        prev_net = _PREV_NET_STATS or curr_net
+        prev_disk = _PREV_DISK_STATS or curr_disk
+        dt = max(now - _PREV_TS, 0.05)
+
+    _PREV_CPU_STATS = curr_cpu
+    _PREV_NET_STATS = curr_net
+    _PREV_DISK_STATS = curr_disk
+    _PREV_TS = now
+
+    # --- CPU total + per-core ---
+    cpu_total = _cpu_usage_from_delta(prev_cpu.get("cpu", []), curr_cpu.get("cpu", []))
+    per_core = []
+    i = 0
+    while True:
+        key = f"cpu{i}"
+        if key not in curr_cpu:
+            break
+        per_core.append(_cpu_usage_from_delta(prev_cpu.get(key, []), curr_cpu[key]))
+        i += 1
+
+    cpu_model = _run("lscpu | grep -m1 'Model name' | cut -d: -f2").strip()
     cpu_cores = _run("nproc")
     load_avg = _run("cat /proc/loadavg").split()[:3]
-
-    # CPU usage per core fra /proc/stat
-    cpu_usage = _run(
-        "top -bn1 | grep '%Cpu' | head -1 | awk '{print $2}'"
-    )
 
     # --- Memory ---
     mem = {}
     for line in _run("cat /proc/meminfo").splitlines():
         parts = line.split()
         if len(parts) >= 2:
-            key = parts[0].rstrip(":")
-            mem[key] = int(parts[1])  # kB
+            mem[parts[0].rstrip(":")] = int(parts[1])
     mem_total_gb = round(mem.get("MemTotal", 0) / 1048576, 1)
     mem_avail_gb = round(mem.get("MemAvailable", 0) / 1048576, 1)
     mem_used_gb = round(mem_total_gb - mem_avail_gb, 1)
@@ -360,39 +376,77 @@ def _collect_system_info() -> dict:
     swap_used_gb = round(swap_total_gb - swap_free_gb, 1)
 
     # --- GPU ---
-    gpu_name = _run(
-        "nvidia-smi --query-gpu=name --format=csv,noheader"
-    ).strip()
-    gpu_temp = _run(
-        "nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader"
-    ).strip()
-    gpu_power = _run(
-        "nvidia-smi --query-gpu=power.draw --format=csv,noheader"
-    ).strip()
-    driver_version = _run(
-        "nvidia-smi --query-gpu=driver_version --format=csv,noheader"
-    ).strip()
+    gpu_query = _run(
+        "nvidia-smi --query-gpu="
+        "name,temperature.gpu,power.draw,driver_version,"
+        "memory.used,memory.total,utilization.gpu,utilization.memory,fan.speed,clocks.gr,clocks.mem "
+        "--format=csv,noheader,nounits"
+    )
+    gpu = {}
+    if gpu_query:
+        vals = [v.strip() for v in gpu_query.split(",")]
+        if len(vals) >= 7:
+            gpu = {
+                "name": vals[0],
+                "temp_c": _safe_int(vals[1]),
+                "power_w": vals[2],
+                "driver": vals[3],
+                "memory_used_mb": _safe_int(vals[4]),
+                "memory_total_mb": _safe_int(vals[5]) or 131072,
+                "util_gpu_pct": _safe_int(vals[6]),
+                "util_mem_pct": _safe_int(vals[7]) if len(vals) > 7 else None,
+                "fan_pct": _safe_int(vals[8]) if len(vals) > 8 else None,
+                "clock_gr_mhz": _safe_int(vals[9]) if len(vals) > 9 else None,
+                "clock_mem_mhz": _safe_int(vals[10]) if len(vals) > 10 else None,
+            }
+    if not gpu:
+        gpu = {"name": "", "temp_c": None, "power_w": "", "driver": "",
+               "memory_used_mb": 0, "memory_total_mb": 131072,
+               "util_gpu_pct": None, "util_mem_pct": None,
+               "fan_pct": None, "clock_gr_mhz": None, "clock_mem_mhz": None}
 
-    # --- Temperatures ---
+    # --- Temperaturer ---
     temps = []
-    thermal_zones = _run("ls /sys/class/thermal/ 2>/dev/null | grep thermal_zone").split()
-    for zone in thermal_zones[:8]:
-        temp_raw = _run(f"cat /sys/class/thermal/{zone}/temp 2>/dev/null")
-        zone_type = _run(f"cat /sys/class/thermal/{zone}/type 2>/dev/null")
-        if temp_raw:
-            temps.append({
-                "zone": zone_type or zone,
-                "temp_c": round(int(temp_raw) / 1000, 1),
-            })
+    for zone_dir in sorted(Path("/sys/class/thermal").glob("thermal_zone*")):
+        try:
+            t = int((zone_dir / "temp").read_text().strip()) / 1000
+            ztype = (zone_dir / "type").read_text().strip()
+            temps.append({"zone": ztype, "temp_c": round(t, 1)})
+        except Exception:
+            continue
 
     # --- Disk ---
-    disk_info = _run("df -h / | tail -1").split()
-    disk_total = disk_info[1] if len(disk_info) > 1 else "?"
-    disk_used = disk_info[2] if len(disk_info) > 2 else "?"
-    disk_avail = disk_info[3] if len(disk_info) > 3 else "?"
-    disk_pct = disk_info[4] if len(disk_info) > 4 else "?"
+    disks = []
+    for line in _run(
+        "df -h --output=source,fstype,size,used,avail,pcent,target "
+        "-x tmpfs -x devtmpfs -x squashfs -x overlay"
+    ).splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 7:
+            disks.append({
+                "source": parts[0],
+                "fstype": parts[1],
+                "size": parts[2],
+                "used": parts[3],
+                "avail": parts[4],
+                "usage_pct": parts[5],
+                "mount": " ".join(parts[6:]),
+            })
 
-    # --- Network ---
+    root_disk = next((d for d in disks if d["mount"] == "/"), disks[0] if disks else None) or {
+        "size": "?", "used": "?", "avail": "?", "usage_pct": "0%",
+    }
+
+    # --- Disk I/O ---
+    disk_io = []
+    for name, (r_sec, w_sec) in curr_disk.items():
+        pr_sec, pw_sec = prev_disk.get(name, (r_sec, w_sec))
+        read_kbps = round((r_sec - pr_sec) * 512 / 1024 / dt, 1)
+        write_kbps = round((w_sec - pw_sec) * 512 / 1024 / dt, 1)
+        if read_kbps > 0 or write_kbps > 0 or name in ("nvme0n1", "sda", "sdb", "nvme1n1"):
+            disk_io.append({"device": name, "read_kbps": read_kbps, "write_kbps": write_kbps})
+
+    # --- Netværk ---
     interfaces = []
     for line in _run("ip -o addr show scope global").splitlines():
         parts = line.split()
@@ -401,25 +455,37 @@ def _collect_system_info() -> dict:
             addr = parts[3].split("/")[0]
             interfaces.append({"name": iface, "ip": addr})
 
-    wifi_ssid = _run("nmcli -t -f active,ssid dev wifi | grep '^yes' | cut -d: -f2")
-    wifi_signal = _run("nmcli -t -f active,signal dev wifi | grep '^yes' | cut -d: -f2")
-    wifi_rate = _run("nmcli -t -f active,rate dev wifi | grep '^yes' | cut -d: -f2")
+    net_throughput = {}
+    for iface, (rx, tx) in curr_net.items():
+        prx, ptx = prev_net.get(iface, (rx, tx))
+        net_throughput[iface] = {
+            "rx_kbps": round((rx - prx) / 1024 / dt, 1),
+            "tx_kbps": round((tx - ptx) / 1024 / dt, 1),
+            "rx_total_mb": round(rx / 1048576, 1),
+            "tx_total_mb": round(tx / 1048576, 1),
+        }
 
-    # --- Display ---
-    display_raw = _run("DISPLAY=:0 xrandr --query 2>/dev/null | grep ' connected'")
-    display_info = display_raw if display_raw else _run("xrandr --query 2>/dev/null | grep ' connected'")
+    wifi_ssid = _run("nmcli -t -f active,ssid dev wifi 2>/dev/null | grep '^yes' | cut -d: -f2")
+    wifi_signal = _run("nmcli -t -f active,signal dev wifi 2>/dev/null | grep '^yes' | cut -d: -f2")
+    wifi_rate = _run("nmcli -t -f active,rate dev wifi 2>/dev/null | grep '^yes' | cut -d: -f2")
 
-    # --- Uptime ---
+    top_cpu = _parse_ps(_run(
+        "ps -eo pid,user,pcpu,pmem,rss,comm --sort=-pcpu --no-headers | head -10"
+    ))
+    top_mem = _parse_ps(_run(
+        "ps -eo pid,user,pcpu,pmem,rss,comm --sort=-pmem --no-headers | head -10"
+    ))
+
+    display_raw = _run("DISPLAY=:0 xrandr --query 2>/dev/null | grep ' connected'") \
+        or _run("xrandr --query 2>/dev/null | grep ' connected'")
+
     uptime_raw = _run("uptime -p")
     uptime_since = _run("uptime -s")
-
-    # --- Hostname & OS ---
     hostname = _run("hostname")
-    os_info = _run("lsb_release -d -s 2>/dev/null") or _run("cat /etc/os-release | grep PRETTY_NAME | cut -d'\"' -f2")
+    os_info = _run("lsb_release -d -s 2>/dev/null") or _run("grep PRETTY_NAME /etc/os-release | cut -d'\"' -f2")
     kernel = _run("uname -r")
     arch = _run("uname -m")
 
-    # --- Docker containers ---
     containers = []
     for line in _run("docker ps --format '{{.Names}}|{{.Status}}|{{.Ports}}'").splitlines():
         parts = line.split("|")
@@ -430,6 +496,11 @@ def _collect_system_info() -> dict:
                 "ports": parts[2] if len(parts) > 2 else "",
             })
 
+    services_state = {}
+    for sid, svc in SERVICES.items():
+        active = _systemctl_user("is-active", svc["unit"], timeout=3).stdout.strip() or "inactive"
+        services_state[sid] = {"active": active, "port": svc["port"]}
+
     return {
         "hostname": hostname,
         "os": os_info,
@@ -438,9 +509,10 @@ def _collect_system_info() -> dict:
         "uptime": uptime_raw,
         "uptime_since": uptime_since,
         "cpu": {
-            "models": [m for m in [cpu_model, cpu_model2] if m],
+            "model": cpu_model,
             "cores": int(cpu_cores) if cpu_cores else 0,
-            "usage_pct": float(cpu_usage) if cpu_usage else 0,
+            "usage_pct": cpu_total,
+            "per_core": per_core,
             "load_avg": load_avg,
         },
         "memory": {
@@ -451,349 +523,83 @@ def _collect_system_info() -> dict:
             "swap_total_gb": swap_total_gb,
             "swap_used_gb": swap_used_gb,
         },
-        "gpu": {
-            "name": gpu_name,
-            "temp_c": int(gpu_temp) if gpu_temp.isdigit() else None,
-            "power_w": gpu_power,
-            "driver": driver_version,
-            "memory_total_gb": 128,
-        },
+        "gpu": gpu,
         "temperatures": temps,
+        "disks": disks,
         "disk": {
-            "total": disk_total,
-            "used": disk_used,
-            "available": disk_avail,
-            "usage_pct": disk_pct,
+            "total": root_disk["size"],
+            "used": root_disk["used"],
+            "available": root_disk["avail"],
+            "usage_pct": root_disk["usage_pct"],
         },
+        "disk_io": disk_io,
         "network": {
             "interfaces": interfaces,
+            "throughput": net_throughput,
             "wifi": {
                 "ssid": wifi_ssid,
-                "signal_pct": int(wifi_signal) if wifi_signal.isdigit() else None,
+                "signal_pct": _safe_int(wifi_signal),
                 "rate": wifi_rate,
             },
         },
-        "display": display_info or "Ingen skærm fundet",
+        "top_cpu": top_cpu,
+        "top_mem": top_mem,
+        "display": display_raw or "Ingen skærm fundet",
         "containers": containers,
+        "services": services_state,
     }
 
 
-# ---------------------------------------------------------------------------
-# Chat assistant (Ollama / gemma4)
-# ---------------------------------------------------------------------------
+def _parse_ps(raw: str) -> list[dict]:
+    rows = []
+    for line in raw.splitlines():
+        parts = line.split(None, 5)
+        if len(parts) < 6:
+            continue
+        rows.append({
+            "pid": parts[0],
+            "user": parts[1],
+            "cpu_pct": _safe_float(parts[2]),
+            "mem_pct": _safe_float(parts[3]),
+            "rss_kb": _safe_int(parts[4]),
+            "command": parts[5][:60],
+        })
+    return rows
 
-OLLAMA_URL = "http://localhost:11434"
-DEFAULT_CHAT_MODEL = "mistral-small3.2:latest"
-CHAT_SYSTEM_PROMPT = (
-    "Du er en hjælpsom assistent på en DGX Spark hjemmeserver. "
-    "Svar på det sprog brugeren skriver på. "
-    "Vær kort og præcis."
-)
 
-
-@app.get("/chat", response_class=HTMLResponse)
-async def chat_page(request: Request):
-    config = load_config()
+def _safe_int(v) -> int | None:
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{OLLAMA_URL}/api/tags", timeout=3.0)
-            models = [m["name"] for m in r.json().get("models", [])]
+        return int(float(v))
     except Exception:
-        models = [DEFAULT_CHAT_MODEL]
-    return templates.TemplateResponse("chat.html", {
-        "request": request,
-        "config": config,
-        "models": models,
-        "default_model": DEFAULT_CHAT_MODEL if DEFAULT_CHAT_MODEL in models else (models[0] if models else ""),
-    })
+        return None
 
 
-@app.post("/api/chat/stream")
-async def chat_stream(request: Request):
-    """Stream svar fra Ollama som SSE, inklusive metrics i sidste event."""
-    body = await request.json()
-    messages = body.get("messages", [])
-    model = body.get("model", DEFAULT_CHAT_MODEL)
-
-    if not messages or messages[0].get("role") != "system":
-        messages = [{"role": "system", "content": CHAT_SYSTEM_PROMPT}] + messages
-
-    async def event_generator():
-        first_token_time = None
-        start_time = time.monotonic()
-        try:
-            async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream(
-                    "POST",
-                    f"{OLLAMA_URL}/api/chat",
-                    json={"model": model, "messages": messages, "stream": True},
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            data = json.loads(line)
-                            content = data.get("message", {}).get("content", "")
-                            done = data.get("done", False)
-
-                            if content and first_token_time is None:
-                                first_token_time = time.monotonic()
-
-                            payload = {"content": content, "done": done}
-
-                            if done:
-                                # Ollama sender metrics i det sidste svar
-                                elapsed = time.monotonic() - start_time
-                                ttft = (first_token_time - start_time) if first_token_time else 0
-                                eval_count = data.get("eval_count", 0)
-                                eval_duration = data.get("eval_duration", 0)  # nanoseconds
-                                prompt_eval_count = data.get("prompt_eval_count", 0)
-                                prompt_eval_duration = data.get("prompt_eval_duration", 0)
-
-                                tokens_per_sec = (
-                                    eval_count / (eval_duration / 1e9)
-                                    if eval_duration > 0 else 0
-                                )
-                                prompt_tps = (
-                                    prompt_eval_count / (prompt_eval_duration / 1e9)
-                                    if prompt_eval_duration > 0 else 0
-                                )
-
-                                payload["metrics"] = {
-                                    "model": model,
-                                    "total_tokens": eval_count + prompt_eval_count,
-                                    "generated_tokens": eval_count,
-                                    "prompt_tokens": prompt_eval_count,
-                                    "tokens_per_sec": round(tokens_per_sec, 1),
-                                    "prompt_tps": round(prompt_tps, 1),
-                                    "time_to_first_token_ms": round(ttft * 1000),
-                                    "total_time_sec": round(elapsed, 2),
-                                }
-
-                            yield f"data: {json.dumps(payload)}\n\n"
-                            if done:
-                                break
-                        except json.JSONDecodeError:
-                            continue
-        except Exception as e:
-            yield f"data: {json.dumps({'content': '', 'done': True, 'error': str(e)})}\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-
-
-@app.get("/api/chat/models")
-async def chat_models():
+def _safe_float(v) -> float | None:
     try:
-        async with httpx.AsyncClient() as client:
-            r = await client.get(f"{OLLAMA_URL}/api/tags", timeout=3.0)
-            raw = r.json().get("models", [])
-            models = []
-            for m in raw:
-                size_bytes = m.get("size", 0)
-                size_gb = round(size_bytes / 1e9, 1) if size_bytes else None
-                params = m.get("details", {}).get("parameter_size", "")
-                family = m.get("details", {}).get("family", "")
-                quant = m.get("details", {}).get("quantization_level", "")
-                models.append({
-                    "name": m["name"],
-                    "size_gb": size_gb,
-                    "params": params,
-                    "family": family,
-                    "quant": quant,
-                })
-        return JSONResponse({"models": models})
+        return float(v)
     except Exception:
-        return JSONResponse({"models": []})
+        return None
 
 
 # ---------------------------------------------------------------------------
-# Installer / setup-wizard backend
+# Power (reboot / shutdown) — kræver polkit-rule for at virke uden adgangskode
 # ---------------------------------------------------------------------------
 
-def _build_install_context(body: dict) -> InstallContext:
-    home = str(Path.home())
-    media_root = body.get("media_root") or f"{home}/Media"
-    return InstallContext(
-        home=home,
-        uid=os.getuid(),
-        gid=os.getgid(),
-        tz=body.get("tz", "Europe/Copenhagen"),
-        media_root=media_root,
-        nextcloud_admin_user=body.get("nextcloud_admin_user", "admin"),
-        nextcloud_admin_password=body.get("nextcloud_admin_password", ""),
-        trusted_domains=body.get("trusted_domains", "localhost"),
-        extras=body.get("extras", {}),
+@app.post("/api/power/{action}")
+async def api_power(action: str):
+    if action not in ("reboot", "poweroff"):
+        return JSONResponse({"error": "invalid action"}, status_code=400)
+    r = subprocess.run(
+        ["systemctl", action],
+        capture_output=True, text=True, timeout=10,
     )
-
-
-@app.get("/api/installer/registry")
-async def installer_registry():
-    """Static list of installable services for the wizard UI."""
-    return JSONResponse({
-        "services": [
-            {
-                "id": inst.id,
-                "name": inst.name,
-                "port": inst.port,
-                "requires_docker": inst.requires_docker,
-                "requires_helper": inst.requires_helper,
-            }
-            for inst in INSTALLER_REGISTRY.values()
-        ]
-    })
-
-
-@app.get("/api/installer/detect")
-async def installer_detect():
-    """Probe each registered service and report install/run state."""
-    results = {}
-    for sid, inst in INSTALLER_REGISTRY.items():
-        try:
-            results[sid] = await inst.detect()
-        except Exception as e:
-            results[sid] = {"installed": False, "running": False, "error": str(e)}
-    return JSONResponse({
-        "services": results,
-        "host": {
-            "docker": _have_cmd("docker"),
-            "uid": os.getuid(),
-            "home": str(Path.home()),
-            "helper": Path("/usr/local/bin/spark-hub-helper").exists(),
-        },
-    })
-
-
-@app.post("/api/installer/install")
-async def installer_install(request: Request):
-    """Install one or more services and stream log lines as SSE.
-
-    Body: {services: [...], media_root, nextcloud_admin_user, nextcloud_admin_password, ...}
-    """
-    body = await request.json()
-    service_ids = body.get("services", [])
-    ctx = _build_install_context(body)
-
-    # Pre-create media root + sub-folders
-    Path(ctx.media_root).mkdir(parents=True, exist_ok=True)
-    for sub in ("film", "serier", "fotos"):
-        (Path(ctx.media_root) / sub).mkdir(exist_ok=True)
-
-    # Persist intent to config now (so a refresh reflects choices)
-    config = load_config()
-    config["media_root"] = ctx.media_root
-    config["media_paths"] = {
-        "film": f"{ctx.media_root}/film",
-        "serier": f"{ctx.media_root}/serier",
-        "fotos": f"{ctx.media_root}/fotos",
-    }
-    if ctx.nextcloud_admin_user:
-        config["nextcloud_admin_user"] = ctx.nextcloud_admin_user
-    save_config(config)
-
-    async def event_generator():
-        installed_ok: list[str] = []
-        for sid in service_ids:
-            inst = INSTALLER_REGISTRY.get(sid)
-            if not inst:
-                yield _sse({"service": sid, "level": "error", "line": f"ukendt service: {sid}"})
-                continue
-
-            yield _sse({"service": sid, "level": "info", "line": f"=== Installerer {inst.name} ==="})
-            ok = True
-            try:
-                async for line in inst.install(ctx):
-                    if line.startswith("__exit__:"):
-                        rc = int(line.split(":", 1)[1])
-                        if rc != 0:
-                            ok = False
-                            yield _sse({
-                                "service": sid, "level": "error",
-                                "line": f"kommando fejlede med exit {rc}",
-                            })
-                        continue
-                    level = "error" if line.startswith("ERROR") else "log"
-                    if level == "error":
-                        ok = False
-                    yield _sse({"service": sid, "level": level, "line": line})
-            except Exception as e:
-                ok = False
-                yield _sse({"service": sid, "level": "error", "line": f"undtagelse: {e}"})
-
-            if ok:
-                installed_ok.append(sid)
-                yield _sse({"service": sid, "level": "ok", "line": f"{inst.name} installeret"})
-            else:
-                yield _sse({"service": sid, "level": "error", "line": f"{inst.name} fejlede"})
-
-        # Update installed_services in config
-        config = load_config()
-        prev = set(config.get("installed_services", []))
-        config["installed_services"] = sorted(prev.union(installed_ok))
-        save_config(config)
-        yield _sse({"service": "_done", "level": "info", "line": "alle handlinger udført",
-                    "installed": installed_ok})
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-
-
-@app.post("/api/installer/start/{service_id}")
-async def installer_start(service_id: str):
-    inst = INSTALLER_REGISTRY.get(service_id)
-    if not inst:
-        return JSONResponse({"ok": False, "error": "unknown service"}, status_code=404)
-    lines = []
-    rc = 0
-    async for line in inst.start():
-        if line.startswith("__exit__:"):
-            rc = int(line.split(":", 1)[1])
-            continue
-        lines.append(line)
-    return JSONResponse({"ok": rc == 0, "rc": rc, "log": lines})
-
-
-@app.post("/api/installer/stop/{service_id}")
-async def installer_stop(service_id: str):
-    inst = INSTALLER_REGISTRY.get(service_id)
-    if not inst:
-        return JSONResponse({"ok": False, "error": "unknown service"}, status_code=404)
-    lines = []
-    rc = 0
-    async for line in inst.stop():
-        if line.startswith("__exit__:"):
-            rc = int(line.split(":", 1)[1])
-            continue
-        lines.append(line)
-    return JSONResponse({"ok": rc == 0, "rc": rc, "log": lines})
-
-
-@app.post("/api/installer/restart/{service_id}")
-async def installer_restart(service_id: str):
-    inst = INSTALLER_REGISTRY.get(service_id)
-    if not inst:
-        return JSONResponse({"ok": False, "error": "unknown service"}, status_code=404)
-    lines = []
-    rc = 0
-    async for line in inst.restart():
-        if line.startswith("__exit__:"):
-            rc = int(line.split(":", 1)[1])
-            continue
-        lines.append(line)
-    return JSONResponse({"ok": rc == 0, "rc": rc, "log": lines})
-
-
-def _have_cmd(name: str) -> bool:
-    import shutil
-    return shutil.which(name) is not None
-
-
-def _sse(payload: dict) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    return {"ok": r.returncode == 0, "stderr": r.stderr}
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Entry
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=7863, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=7863)

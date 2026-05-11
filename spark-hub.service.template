@@ -14,6 +14,9 @@ StartLimitBurst=10
 StartLimitIntervalSec=60
 Environment=HOME=__HOME__
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Tillader systemctl --user-kald (restart af vLLM/LiteLLM user units)
+# %U expanderer til UID af User= ovenfor; kræver loginctl enable-linger __USER__
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 
 [Install]
 WantedBy=multi-user.target

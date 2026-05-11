@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  Spark Hub installer — portable, one-line bootstrap for any DGX machine
+#  Spark Hub installer — DGX Spark system monitor dashboard
 #
 #  curl -fsSL https://raw.githubusercontent.com/Parthee-Vijaya/DGX-hub/main/install.sh | bash
 #
 #  What this does:
 #    1. Installs system deps (python3 venv, git, curl) via apt + sudo
-#    2. Installs Docker if missing, adds you to the docker group
-#    3. Clones spark-hub into ~/spark-hub (or updates if already there)
-#    4. Creates Python venv and installs requirements
-#    5. Installs /usr/local/bin/spark-hub-helper + /etc/sudoers.d/spark-hub
-#       (gives spark-hub permission to install/restart Plex and Ollama)
-#    6. Generates and installs the systemd unit with your user/paths
-#    7. Enables + starts spark-hub on port 7863
+#    2. Clones spark-hub into ~/spark-hub (or updates if already there)
+#    3. Creates Python venv and installs requirements
+#    4. Enables user-linger so the dashboard can talk to user systemd
+#       services (vLLM, LiteLLM) for restart-knapperne
+#    5. Generates and installs the systemd unit with your user/paths
+#    6. Enables + starts spark-hub on port 7863
 #
-#  What this does NOT do:
-#    Install Jellyfin, Plex, Immich, Nextcloud, Ollama — that's the wizard's
-#    job, run from your browser at http://<this-machine>:7863
+#  What this dashboard does:
+#    - Detailed system monitoring (CPU per-core, GPU, RAM, disk, net, processes)
+#    - Restart buttons for vLLM and LiteLLM (user systemd services)
+#    - Embedded terminal (iframes web-terminal on port 7862 if present)
 # ============================================================================
 
 set -euo pipefail
@@ -57,22 +57,7 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq python3 python3-venv python3-pip git curl ca-certificates gnupg
 ok "System-pakker OK"
 
-# --- 2. Docker --------------------------------------------------------------
-if ! command -v docker >/dev/null; then
-  step "Installerer Docker..."
-  curl -fsSL https://get.docker.com | sudo sh
-  sudo usermod -aG docker "$REAL_USER"
-  ok "Docker installeret. Logud/login eller 'newgrp docker' for at bruge det uden sudo."
-else
-  ok "Docker findes allerede"
-fi
-
-if ! groups "$REAL_USER" | grep -qw docker; then
-  warn "Du er ikke i docker-gruppen — kør: newgrp docker  (eller log ud og ind igen)"
-  warn "Wizarden vil fejle på Jellyfin/Immich/Nextcloud install indtil dette er ordnet."
-fi
-
-# --- 3. Clone or update repo ------------------------------------------------
+# --- 2. Clone or update repo ------------------------------------------------
 step "Henter Spark Hub..."
 if [ -d "$INSTALL_DIR/.git" ]; then
   git -C "$INSTALL_DIR" pull --ff-only --quiet || warn "git pull fejlede — fortsætter med eksisterende kode"
@@ -89,7 +74,7 @@ fi
 
 cd "$INSTALL_DIR"
 
-# --- 4. Python venv ---------------------------------------------------------
+# --- 3. Python venv ---------------------------------------------------------
 step "Opretter Python venv..."
 if [ ! -d venv ]; then
   python3 -m venv venv
@@ -98,18 +83,16 @@ fi
 ./venv/bin/pip install --quiet -r requirements.txt
 ok "Python venv klar"
 
-# --- 5. Helper + sudoers ----------------------------------------------------
-step "Installerer spark-hub-helper (privileged actions whitelist)..."
-sudo install -m 0755 -o root -g root scripts/spark-hub-helper.sh /usr/local/bin/spark-hub-helper
+# --- 4. Linger (så systemctl --user virker fra system-service-konteksten) ---
+step "Aktiverer user-linger for $REAL_USER..."
+if loginctl show-user "$REAL_USER" 2>/dev/null | grep -q '^Linger=yes'; then
+  ok "Linger allerede aktiveret"
+else
+  sudo loginctl enable-linger "$REAL_USER"
+  ok "Linger aktiveret — /run/user/$REAL_UID vil nu altid eksistere"
+fi
 
-SUDOERS_FILE="/etc/sudoers.d/spark-hub"
-SUDOERS_LINE="$REAL_USER ALL=(root) NOPASSWD: /usr/local/bin/spark-hub-helper"
-echo "$SUDOERS_LINE" | sudo tee "$SUDOERS_FILE" >/dev/null
-sudo chmod 0440 "$SUDOERS_FILE"
-sudo visudo -cf "$SUDOERS_FILE" >/dev/null || die "ugyldig sudoers — $SUDOERS_FILE blev IKKE aktiveret"
-ok "spark-hub-helper installeret + sudoers regel for $REAL_USER"
-
-# --- 6. Static icons (if missing) -------------------------------------------
+# --- 5. Static icons (if missing) -------------------------------------------
 if [ ! -f static/icon-192.png ]; then
   step "Genererer PWA icons..."
   ./venv/bin/pip install --quiet Pillow >/dev/null 2>&1 && \
@@ -125,6 +108,13 @@ for size in [192, 512]:
     d.polygon(pts, fill='white')
     img.save(f'static/icon-{size}.png')
 " 2>/dev/null && ok "Icons genereret" || warn "Icons sprunget over"
+fi
+
+# --- 6. Cleanup gammel sudoers-helper hvis tidligere version blev installeret
+if [ -f /etc/sudoers.d/spark-hub ] || [ -f /usr/local/bin/spark-hub-helper ]; then
+  step "Fjerner gammel sudoers-helper (ikke længere nødvendig)..."
+  sudo rm -f /etc/sudoers.d/spark-hub /usr/local/bin/spark-hub-helper
+  ok "Sudoers-helper fjernet"
 fi
 
 # --- 7. Systemd unit --------------------------------------------------------
@@ -154,13 +144,15 @@ TS_IP="$(tailscale ip -4 2>/dev/null | head -1 || true)"
 
 echo ""
 echo "════════════════════════════════════════════════════"
-echo -e "${GREEN}⚡ Spark Hub er installeret og kører${NC}"
+echo -e "${GREEN}⚡ Spark Hub system-monitor er installeret og kører${NC}"
 echo ""
 echo -e "  Lokalt:    ${BLUE}http://${LAN_IP:-localhost}:${PORT}${NC}"
 [ -n "$TS_IP" ] && echo -e "  Tailscale: ${BLUE}http://${TS_IP}:${PORT}${NC}"
 echo ""
-echo "  Åbn dashboardet i en browser og kør opsætnings-wizarden."
-echo "  Den installerer Jellyfin, Plex, Immich, Nextcloud og Ollama."
+echo "  Features:"
+echo "    - Detaljeret system-monitor (CPU per-core, GPU, RAM, disk, net)"
+echo "    - Restart-knapper for vLLM og LiteLLM (user systemd services)"
+echo "    - Indlejret terminal (kræver web-terminal på port 7862)"
 echo ""
 echo "  Kommandoer:"
 echo "    sudo systemctl status spark-hub       # tjek status"

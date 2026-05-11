@@ -10,7 +10,7 @@
   </div>
 
   {% if request.query_params.get('saved') %}
-  <div class="mb-4 glass p-3 border-green-500/20 text-green-400 rounded-xl text-sm animate-fade-up" style="border-color:rgba(34,197,94,0.2)">
+  <div class="mb-4 glass p-3 text-green-400 rounded-xl text-sm animate-fade-up" style="border-color:rgba(34,197,94,0.2)">
     Indstillinger gemt
   </div>
   {% endif %}
@@ -22,12 +22,19 @@
         <label class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Servernavn</label>
         <input type="text" name="server_name" value="{{ config.server_name }}"
                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-sky-500/50 transition-all">
+        <p class="text-[10px] text-gray-600 mt-2">Vises i nav og hero på dashboardet</p>
       </div>
-      <div class="mb-6">
+      <div class="mb-4">
         <label class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Tailscale IP</label>
         <input type="text" name="tailscale_ip" value="{{ config.tailscale_ip }}"
                class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-mono focus:outline-none focus:border-sky-500/50 transition-all">
-        <p class="text-[10px] text-gray-600 mt-2">Bruges til links i dashboardet</p>
+        <p class="text-[10px] text-gray-600 mt-2">Vises som reference i footeren</p>
+      </div>
+      <div class="mb-6">
+        <label class="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Terminal-port</label>
+        <input type="number" name="terminal_port" value="{{ config.terminal_port|default(7862) }}"
+               class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm font-mono focus:outline-none focus:border-sky-500/50 transition-all">
+        <p class="text-[10px] text-gray-600 mt-2">Port for embedded web-terminal (standard: 7862)</p>
       </div>
       <button type="submit"
               class="w-full py-3 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold rounded-xl transition-all text-sm shadow-lg shadow-sky-500/20">
@@ -37,50 +44,51 @@
   </div>
 
   <div class="glass rounded-2xl p-6 mb-6 animate-fade-up delay-2">
-    <h2 class="text-sm font-semibold mb-4 text-white">Tjenester</h2>
-    <div class="space-y-0 divide-y divide-white/5" id="settings-services">
+    <h2 class="text-sm font-semibold mb-4 text-white">AI Services</h2>
+    <div id="settings-services" class="space-y-0 divide-y divide-white/5">
       <p class="text-gray-600 text-xs">Henter status...</p>
     </div>
   </div>
 
   <div class="glass rounded-2xl p-6 animate-fade-up delay-3">
-    <h2 class="text-sm font-semibold mb-2 text-white">Gendan opsaetning</h2>
-    <p class="text-xs text-gray-500 mb-4">K&oslash;r setup wizarden igen fra begyndelsen.</p>
-    <button onclick="resetSetup()"
-            class="py-2 px-4 bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/30 text-gray-400 hover:text-red-400 text-xs rounded-xl transition-all font-medium">
-      K&oslash;r wizard igen
-    </button>
+    <h2 class="text-sm font-semibold mb-2 text-white">Om</h2>
+    <p class="text-xs text-gray-500 mb-1">Spark Hub — DGX Spark system monitor + service control</p>
+    <p class="text-[10px] text-gray-700 font-mono" id="settings-network">---</p>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  async function loadServiceStatus() {
+  async function loadServices() {
     try {
-      const data = await (await fetch('/api/status')).json();
+      const list = await (await fetch('/api/services')).json();
       const c = document.getElementById('settings-services');
       c.innerHTML = '';
-      data.services.forEach(s => {
+      list.forEach(s => {
+        const ok = s.active === 'active' && s.responsive;
         const row = document.createElement('div');
         row.className = 'flex items-center gap-3 py-3';
         row.innerHTML = `
-          <div class="w-1.5 h-1.5 rounded-full ${s.online ? 'bg-green-400' : 'bg-red-400'}"></div>
+          <div class="w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-400' : (s.active === 'active' ? 'bg-yellow-400' : 'bg-red-400')}"></div>
           <span class="text-xs text-white">${s.name}</span>
-          <span class="ml-auto text-[10px] font-medium uppercase tracking-wider ${s.online ? 'text-green-400' : 'text-red-400'}">${s.online ? 'Online' : 'Offline'}</span>
-          ${s.online ? `<a href="${s.url}" target="_blank" class="text-[10px] text-gray-500 hover:text-white transition-colors">&Aring;bn</a>` : ''}
+          <span class="text-[10px] text-gray-600 font-mono">:${s.port}</span>
+          <span class="ml-auto text-[10px] font-medium uppercase tracking-wider ${ok ? 'text-green-400' : 'text-gray-400'}">${s.active}</span>
         `;
         c.appendChild(row);
       });
-    } catch(e) {
-      document.getElementById('settings-services').innerHTML = '<p class="text-red-400 text-xs">Fejl</p>';
+    } catch (e) {
+      document.getElementById('settings-services').innerHTML = '<p class="text-red-400 text-xs">Fejl ved hentning</p>';
     }
   }
-  async function resetSetup() {
-    if (!confirm('Er du sikker?')) return;
-    await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({setup_done:false}) });
-    window.location.href = '/wizard';
+  async function loadNetwork() {
+    try {
+      const n = await (await fetch('/api/network')).json();
+      document.getElementById('settings-network').textContent =
+        `${n.hostname || ''} · LAN ${n.lan_ip || '?'} · Tailscale ${n.tailscale_ip || '?'}`;
+    } catch (e) {}
   }
-  loadServiceStatus();
+  loadServices();
+  loadNetwork();
 </script>
 {% endblock %}

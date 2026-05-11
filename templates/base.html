@@ -11,21 +11,19 @@
   <meta name="apple-mobile-web-app-title" content="Spark Hub">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/static/tailwind.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          fontFamily: { sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'system-ui', 'sans-serif'] },
         }
       }
     }
   </script>
   <style>
     body {
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Inter', sans-serif;
       background: #09090b;
       background-image:
         radial-gradient(ellipse 80% 60% at 50% -20%, rgba(14,165,233,0.08), transparent),
@@ -51,9 +49,7 @@
       from { opacity: 0; transform: translateY(12px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    .animate-fade-up {
-      animation: fade-up 0.4s ease-out both;
-    }
+    .animate-fade-up { animation: fade-up 0.4s ease-out both; }
     .delay-1 { animation-delay: 0.05s; }
     .delay-2 { animation-delay: 0.1s; }
     .delay-3 { animation-delay: 0.15s; }
@@ -63,6 +59,7 @@
       backdrop-filter: saturate(180%) blur(16px);
       -webkit-backdrop-filter: saturate(180%) blur(16px);
     }
+    .nav-link { @apply px-3 py-1.5 text-xs font-medium rounded-lg transition-all; }
   </style>
   {% block head %}{% endblock %}
 </head>
@@ -78,12 +75,15 @@
     </div>
     <span id="nav-server-name">Spark Hub</span>
   </a>
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-1">
+    <a href="/dashboard" class="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all hidden sm:block">
+      Dashboard
+    </a>
     <a href="/system" class="px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all hidden sm:block">
       System
     </a>
-    <a href="/chat" class="px-3 py-1.5 text-xs font-medium text-sky-400 hover:text-sky-300 hover:bg-sky-400/10 rounded-lg transition-all hidden sm:block">
-      Chat
+    <a href="/terminal" class="px-3 py-1.5 text-xs font-medium text-sky-400 hover:text-sky-300 hover:bg-sky-400/10 rounded-lg transition-all hidden sm:block">
+      Terminal
     </a>
     <a href="/settings" class="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-400 hover:text-white" title="Indstillinger">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,7 +92,6 @@
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
       </svg>
     </a>
-    <!-- Mobile menu -->
     <button onclick="document.getElementById('mobile-menu').classList.toggle('hidden')" class="p-2 rounded-lg hover:bg-white/5 transition-all text-gray-400 sm:hidden">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
@@ -100,11 +99,10 @@
     </button>
   </div>
 </nav>
-<!-- Mobile dropdown -->
 <div id="mobile-menu" class="hidden sm:hidden nav-blur border-b border-white/5 px-4 py-2 flex flex-col gap-1">
   <a href="/dashboard" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">Dashboard</a>
-  <a href="/chat" class="px-3 py-2 text-sm text-sky-400 hover:bg-sky-400/10 rounded-lg transition-all">Chat</a>
   <a href="/system" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">System</a>
+  <a href="/terminal" class="px-3 py-2 text-sm text-sky-400 hover:bg-sky-400/10 rounded-lg transition-all">Terminal</a>
   <a href="/settings" class="px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-all">Indstillinger</a>
 </div>
 {% endblock %}
